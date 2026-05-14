@@ -1,0 +1,261 @@
+---
+import { type CollectionEntry, getCollection, render } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Comments from '../../components/Comments.astro';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog', ({ data }) => !data.draft);
+  return posts.map(post => ({
+    params: { slug: post.id },
+    props: post,
+  }));
+}
+
+type Props = CollectionEntry<'blog'>;
+const post = Astro.props;
+const { Content } = await render(post);
+
+const { title, description, pubDate, updatedDate, heroImage, tags, category, author } = post.data;
+
+const dateFmt = pubDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+const updatedFmt = updatedDate?.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+const categoryLabel: Record<string, string> = {
+  ai: 'AI',
+  infra: 'Infra',
+  homelab: 'Homelab',
+  notes: 'Notes',
+  tutorial: 'Tutorial',
+};
+---
+
+<BaseLayout title={title} description={description} image={heroImage}>
+  <article class="post">
+    <header class="post-header">
+      <div class="container-narrow">
+        <div class="post-meta">
+          <a href="/blog" class="back-link">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M11 7H3M3 7L7 11M3 7L7 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            All posts
+          </a>
+          <span class="meta-sep">·</span>
+          <span class="post-category mono">{categoryLabel[category] ?? category}</span>
+        </div>
+
+        <h1 class="post-title">{title}</h1>
+        <p class="post-desc">{description}</p>
+
+        <div class="post-info mono">
+          <span class="author">by {author}</span>
+          <span class="meta-sep">·</span>
+          <time datetime={pubDate.toISOString()}>{dateFmt}</time>
+          {updatedFmt && <span class="updated">· updated {updatedFmt}</span>}
+        </div>
+
+        {tags.length > 0 && (
+          <div class="post-tags">
+            {tags.map(t => <a href={`/tags/${t}/`} class="tag mono">#{t}</a>)}
+          </div>
+        )}
+      </div>
+    </header>
+
+    {heroImage && (
+      <div class="container-narrow">
+        <img src={heroImage} alt="" class="hero-image" />
+      </div>
+    )}
+
+    <div class="container-narrow post-body">
+      <Content />
+    </div>
+
+    <div class="container-narrow">
+      <Comments />
+    </div>
+
+    <footer class="post-footer">
+      <div class="container-narrow">
+        <hr />
+        <div class="footer-meta">
+          <a href="/blog" class="back-link">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M11 7H3M3 7L7 11M3 7L7 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Back to all posts
+          </a>
+        </div>
+      </div>
+    </footer>
+  </article>
+</BaseLayout>
+
+<style>
+  .post-header {
+    padding: 3rem 0 2rem;
+  }
+
+  .post-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.85rem;
+  }
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--color-ink-mute);
+    font-weight: 500;
+    transition: color 0.2s var(--ease);
+  }
+
+  .back-link:hover {
+    color: var(--color-blue-bright);
+    text-decoration: none;
+  }
+
+  .meta-sep {
+    color: var(--color-ink-mute);
+  }
+
+  .post-category {
+    color: var(--color-blue-bright);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.72rem;
+    font-weight: 600;
+  }
+
+  .post-title {
+    font-size: clamp(2rem, 5vw, 3rem);
+    line-height: 1.15;
+    margin-bottom: 1rem;
+    letter-spacing: -0.025em;
+  }
+
+  .post-desc {
+    font-size: 1.2rem;
+    color: var(--color-ink-soft);
+    line-height: 1.5;
+    margin-bottom: 1.5rem;
+  }
+
+  .post-info {
+    font-size: 0.85rem;
+    color: var(--color-ink-mute);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .author {
+    color: var(--color-blue-deep);
+    font-weight: 500;
+  }
+
+  .updated {
+    color: var(--color-blue-bright);
+    margin-left: 0.4rem;
+  }
+
+  .post-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 1rem;
+  }
+
+  .tag {
+    font-size: 0.78rem;
+    color: var(--color-blue-deep);
+    background: var(--color-blue-tint);
+    padding: 0.25rem 0.6rem;
+    border-radius: 3px;
+    transition: all 0.2s var(--ease);
+  }
+
+  .tag:hover {
+    background: var(--color-blue-bright);
+    color: white;
+    text-decoration: none;
+  }
+
+  .hero-image {
+    width: 100%;
+    border-radius: var(--radius-lg);
+    margin: 1.5rem 0 0;
+    box-shadow: var(--shadow-md);
+  }
+
+  /* Article body styling */
+  .post-body {
+    padding: 2.5rem 1.5rem 4rem;
+    font-size: 1.05rem;
+    line-height: 1.75;
+  }
+
+  .post-body :global(h2) {
+    margin-top: 2.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-line-soft);
+  }
+
+  .post-body :global(h2:first-of-type) {
+    border-top: none;
+    padding-top: 0;
+  }
+
+  .post-body :global(p) {
+    margin-bottom: 1.4rem;
+    color: var(--color-ink);
+  }
+
+  .post-body :global(a) {
+    color: var(--color-blue-bright);
+    border-bottom: 1px solid var(--color-blue-glow);
+    transition: all 0.2s var(--ease);
+  }
+
+  .post-body :global(a:hover) {
+    color: var(--color-blue-deep);
+    border-bottom-color: var(--color-blue-bright);
+    text-decoration: none;
+  }
+
+  .post-body :global(img) {
+    margin: 1.5rem 0;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .post-body :global(figure) {
+    margin: 1.5rem 0;
+  }
+
+  .post-body :global(figcaption) {
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--color-ink-mute);
+    margin-top: 0.5rem;
+  }
+
+  .post-body :global(.expressive-code) {
+    margin: 1.5rem 0;
+  }
+
+  .post-footer {
+    padding-bottom: 3rem;
+  }
+
+  .footer-meta {
+    text-align: center;
+    padding-top: 1rem;
+  }
+</style>

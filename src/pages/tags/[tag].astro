@@ -1,0 +1,100 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostCard from '../../components/PostCard.astro';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog', ({ data }) => !data.draft);
+  const tags = [...new Set(posts.flatMap(p => p.data.tags))];
+
+  return tags.map(tag => ({
+    params: { tag },
+    props: {
+      posts: posts
+        .filter(p => p.data.tags.includes(tag))
+        .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()),
+    },
+  }));
+}
+
+const { tag } = Astro.params;
+const { posts } = Astro.props;
+---
+
+<BaseLayout title={`#${tag}`} description={`Posts tagged #${tag}`}>
+  <section class="page-head">
+    <div class="container">
+      <a href="/tags" class="back-link">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M11 7H3M3 7L7 11M3 7L7 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        All tags
+      </a>
+      <h1 class="tag-title"><span class="tag-hash">#</span>{tag}</h1>
+      <p class="lead">{posts.length} {posts.length === 1 ? 'post' : 'posts'} tagged with <code>#{tag}</code>.</p>
+    </div>
+  </section>
+
+  <section class="tag-posts">
+    <div class="container">
+      <div class="post-grid">
+        {posts.map(post => (
+          <PostCard
+            href={`/blog/${post.id}/`}
+            title={post.data.title}
+            description={post.data.description}
+            pubDate={post.data.pubDate}
+            category={post.data.category}
+            tags={post.data.tags}
+          />
+        ))}
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .page-head {
+    padding: 3rem 0 2rem;
+  }
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--color-ink-mute);
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-bottom: 1rem;
+  }
+
+  .back-link:hover {
+    color: var(--color-blue-bright);
+    text-decoration: none;
+  }
+
+  .tag-title {
+    margin: 0.5rem 0 0.75rem;
+    font-family: var(--font-mono);
+    font-weight: 500;
+  }
+
+  .tag-hash {
+    color: var(--color-blue-bright);
+  }
+
+  .lead {
+    color: var(--color-ink-soft);
+    font-size: 1.05rem;
+  }
+
+  .tag-posts {
+    padding-bottom: 4rem;
+  }
+
+  .post-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 1.25rem;
+  }
+</style>

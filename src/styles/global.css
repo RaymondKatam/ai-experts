@@ -1,0 +1,218 @@
+/* ============================================
+   Homelab Notes — global styles
+   Aesthetic: technical / engineering notebook
+   Palette: deep blue, ink, paper white
+   ============================================ */
+
+:root {
+  /* Color palette */
+  --color-bg: #fafbfc;
+  --color-paper: #ffffff;
+  --color-ink: #0a1628;
+  --color-ink-soft: #364152;
+  --color-ink-mute: #64748b;
+  --color-line: #e2e8f0;
+  --color-line-soft: #eef2f6;
+
+  --color-blue: #1e40af;
+  --color-blue-bright: #2563eb;
+  --color-blue-deep: #0c2461;
+  --color-blue-tint: #eff4ff;
+  --color-blue-glow: rgba(37, 99, 235, 0.12);
+
+  --color-accent: #f59e0b;
+
+  /* Type */
+  --font-display: 'IBM Plex Serif', 'Georgia', serif;
+  --font-body: 'Inter Tight', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Layout */
+  --max-width: 1180px;
+  --content-width: 720px;
+  --radius: 4px;
+  --radius-lg: 8px;
+
+  /* Shadow */
+  --shadow-sm: 0 1px 2px rgba(10, 22, 40, 0.04);
+  --shadow-md: 0 4px 12px rgba(10, 22, 40, 0.06), 0 2px 4px rgba(10, 22, 40, 0.04);
+  --shadow-blue: 0 8px 24px rgba(30, 64, 175, 0.15);
+
+  /* Motion */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--color-ink);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+
+  /* Subtle grid background — engineering paper feel */
+  background-image:
+    linear-gradient(rgba(30, 64, 175, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 64, 175, 0.025) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+}
+
+main {
+  flex: 1;
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--color-ink);
+  letter-spacing: -0.02em;
+}
+
+h1 { font-size: clamp(2rem, 5vw, 3.25rem); }
+h2 { font-size: clamp(1.5rem, 3vw, 2rem); margin-top: 2.5rem; margin-bottom: 1rem; }
+h3 { font-size: 1.35rem; margin-top: 2rem; margin-bottom: 0.75rem; }
+h4 { font-size: 1.1rem; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+
+p {
+  margin-bottom: 1.25rem;
+  color: var(--color-ink-soft);
+}
+
+a {
+  color: var(--color-blue-bright);
+  text-decoration: none;
+  text-underline-offset: 3px;
+  transition: color 0.2s var(--ease);
+}
+
+a:hover {
+  color: var(--color-blue-deep);
+  text-decoration: underline;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--color-blue-tint);
+  color: var(--color-blue-deep);
+  padding: 0.15em 0.4em;
+  border-radius: 3px;
+  border: 1px solid var(--color-line);
+}
+
+pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+blockquote {
+  border-left: 3px solid var(--color-blue-bright);
+  padding: 0.5rem 0 0.5rem 1.25rem;
+  margin: 1.5rem 0;
+  color: var(--color-ink-soft);
+  font-style: italic;
+  background: var(--color-blue-tint);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--color-line);
+  margin: 2.5rem 0;
+}
+
+ul, ol {
+  margin-bottom: 1.25rem;
+  padding-left: 1.5rem;
+  color: var(--color-ink-soft);
+}
+
+li {
+  margin-bottom: 0.4rem;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  font-size: 0.95rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--color-line);
+}
+
+th {
+  background: var(--color-blue-tint);
+  font-weight: 600;
+  color: var(--color-blue-deep);
+}
+
+/* Utility */
+.container {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.container-narrow {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  letter-spacing: -0.01em;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-blue-bright);
+  font-weight: 500;
+}
+
+/* Selection */
+::selection {
+  background: var(--color-blue-bright);
+  color: white;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

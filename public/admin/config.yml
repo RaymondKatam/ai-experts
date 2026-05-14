@@ -1,0 +1,64 @@
+# =====================================================
+# Decap CMS configuration
+# =====================================================
+# IMPORTANT: After you push to GitHub, edit the two
+# values below marked with TODO.
+# =====================================================
+
+backend:
+  name: github
+  # TODO: change these to your real GitHub username/repo
+  repo: YOUR_GITHUB_USERNAME/ai-experts
+  branch: main
+  # Uses GitHub OAuth — see README for setup
+  base_url: https://api.netlify.com
+  auth_endpoint: auth
+
+# Where uploaded images go
+media_folder: "public/images/uploads"
+public_folder: "/images/uploads"
+
+# Show preview of post while editing
+show_preview_links: true
+
+# Use editorial workflow: drafts → review → publish (creates PRs)
+publish_mode: editorial_workflow
+
+collections:
+  - name: "blog"
+    label: "Blog Posts"
+    label_singular: "Post"
+    folder: "src/content/blog"
+    create: true
+    slug: "{{slug}}"
+    extension: "md"
+    format: "frontmatter"
+    summary: "{{title}} — {{author}} · {{pubDate | date('YYYY-MM-DD')}}"
+    sortable_fields: ['pubDate', 'title', 'author']
+    view_filters:
+      - label: "Drafts"
+        field: draft
+        pattern: true
+      - label: "Published"
+        field: draft
+        pattern: false
+    fields:
+      - { label: "Title", name: "title", widget: "string" }
+      - { label: "Description", name: "description", widget: "text", hint: "One-sentence summary shown on the card and in meta tags." }
+      - { label: "Publish Date", name: "pubDate", widget: "datetime", date_format: "YYYY-MM-DD", time_format: false, picker_utc: false }
+      - { label: "Updated Date", name: "updatedDate", widget: "datetime", date_format: "YYYY-MM-DD", time_format: false, required: false }
+      - { label: "Author", name: "author", widget: "string", default: "Raymond Kipngetich" }
+      - label: "Category"
+        name: "category"
+        widget: "select"
+        options:
+          - { label: "AI", value: "ai" }
+          - { label: "Infrastructure", value: "infra" }
+          - { label: "Homelab", value: "homelab" }
+          - { label: "Notes", value: "notes" }
+          - { label: "Tutorial", value: "tutorial" }
+        default: "ai"
+      - { label: "Tags", name: "tags", widget: "list", required: false, hint: "Comma-separated. Used for /tags/ pages." }
+      - { label: "Hero Image", name: "heroImage", widget: "image", required: false, hint: "Optional. Shown at top of post." }
+      - { label: "Draft", name: "draft", widget: "boolean", default: false, hint: "If true, post is hidden from the live site." }
+      - { label: "Body", name: "body", widget: "markdown" }

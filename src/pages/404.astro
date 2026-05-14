@@ -1,0 +1,86 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="404 — Not Found" description="That page doesn't exist.">
+  <section class="not-found">
+    <div class="container-narrow">
+      <div class="error-code mono">404</div>
+      <h1>Page not found</h1>
+      <p>
+        That URL didn't resolve to anything. Maybe the link is stale, or maybe
+        I haven't written that post yet.
+      </p>
+      <div class="actions">
+        <a href="/" class="btn">← Back home</a>
+        <a href="/blog" class="btn btn-ghost">Browse posts</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .not-found {
+    padding: 5rem 0 6rem;
+    text-align: center;
+  }
+
+  .error-code {
+    font-size: 5rem;
+    color: var(--color-blue-bright);
+    font-weight: 600;
+    letter-spacing: -0.05em;
+    line-height: 1;
+    margin-bottom: 1rem;
+  }
+
+  h1 {
+    margin-bottom: 1rem;
+  }
+
+  p {
+    color: var(--color-ink-soft);
+    font-size: 1.1rem;
+    margin-bottom: 2rem;
+  }
+
+  .actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 1.25rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    border-radius: var(--radius);
+    text-decoration: none;
+    background: var(--color-blue-bright);
+    color: white;
+    border: 1px solid transparent;
+    transition: all 0.2s var(--ease);
+  }
+
+  .btn:hover {
+    background: var(--color-blue-deep);
+    text-decoration: none;
+    color: white;
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--color-ink-soft);
+    border-color: var(--color-line);
+  }
+
+  .btn-ghost:hover {
+    color: var(--color-blue-deep);
+    border-color: var(--color-blue-bright);
+    background: var(--color-paper);
+  }
+</style>

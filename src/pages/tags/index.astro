@@ -1,0 +1,113 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+const posts = await getCollection('blog', ({ data }) => !data.draft);
+
+const tagCounts = posts.reduce((acc, post) => {
+  post.data.tags.forEach(tag => {
+    acc[tag] = (acc[tag] || 0) + 1;
+  });
+  return acc;
+}, {} as Record<string, number>);
+
+const tags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
+---
+
+<BaseLayout title="Tags" description="Browse posts by topic and tag.">
+  <section class="page-head">
+    <div class="container">
+      <span class="eyebrow">// index</span>
+      <h1>Tags</h1>
+      <p class="lead">
+        Browse by topic. {tags.length} {tags.length === 1 ? 'tag' : 'tags'} across {posts.length} posts.
+      </p>
+    </div>
+  </section>
+
+  <section class="tags-section">
+    <div class="container">
+      {tags.length === 0 ? (
+        <p class="empty">No tags yet — add some to your post frontmatter.</p>
+      ) : (
+        <div class="tag-grid">
+          {tags.map(([tag, count]) => (
+            <a href={`/tags/${tag}/`} class="tag-card">
+              <span class="tag-name mono">#{tag}</span>
+              <span class="tag-count">{count}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .page-head {
+    padding: 3rem 0 2rem;
+  }
+
+  .page-head h1 {
+    margin: 0.5rem 0 0.75rem;
+  }
+
+  .lead {
+    color: var(--color-ink-soft);
+    font-size: 1.1rem;
+  }
+
+  .tags-section {
+    padding-bottom: 4rem;
+  }
+
+  .tag-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .tag-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.85rem 1.1rem;
+    background: var(--color-paper);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius);
+    color: var(--color-ink);
+    transition: all 0.2s var(--ease);
+  }
+
+  .tag-card:hover {
+    border-color: var(--color-blue-bright);
+    background: var(--color-blue-tint);
+    transform: translateY(-1px);
+    text-decoration: none;
+  }
+
+  .tag-name {
+    color: var(--color-blue-deep);
+    font-weight: 500;
+  }
+
+  .tag-count {
+    font-size: 0.8rem;
+    color: var(--color-ink-mute);
+    background: var(--color-blue-tint);
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+  }
+
+  .tag-card:hover .tag-count {
+    background: white;
+    color: var(--color-blue-deep);
+  }
+
+  .empty {
+    text-align: center;
+    color: var(--color-ink-mute);
+    padding: 2rem;
+  }
+</style>

@@ -1,0 +1,101 @@
+---
+import { SITE } from '../consts';
+const year = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <div class="footer-col">
+      <div class="footer-brand">{SITE.title}</div>
+      <p class="footer-tag">{SITE.tagline}</p>
+    </div>
+
+    <div class="footer-col">
+      <div class="footer-heading mono">// navigate</div>
+      <a href="/">Home</a>
+      <a href="/blog">All posts</a>
+      <a href="/tags">Tags</a>
+      <a href="/about">About</a>
+    </div>
+
+    <div class="footer-col">
+      <div class="footer-heading mono">// connect</div>
+      <a href={SITE.github} target="_blank" rel="noopener">GitHub</a>
+      <a href={SITE.twitter} target="_blank" rel="noopener">Twitter</a>
+      <a href={`mailto:${SITE.email}`}>Email</a>
+      <a href="/rss.xml">RSS</a>
+    </div>
+  </div>
+
+  <div class="container footer-bottom">
+    <span class="mono">© {year} Raymond Kipngetich</span>
+    <span class="mono">built with astro · deployed on the edge</span>
+  </div>
+</footer>
+
+<style>
+  .site-footer {
+    margin-top: 6rem;
+    background: var(--color-paper);
+    border-top: 1px solid var(--color-line);
+  }
+
+  .footer-inner {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr 1fr;
+    gap: 3rem;
+    padding: 3rem 1.5rem 2rem;
+  }
+
+  .footer-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .footer-brand {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.15rem;
+    color: var(--color-ink);
+  }
+
+  .footer-tag {
+    color: var(--color-ink-mute);
+    font-size: 0.9rem;
+    margin: 0;
+    max-width: 320px;
+  }
+
+  .footer-heading {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--color-blue-bright);
+    margin-bottom: 0.4rem;
+  }
+
+  .footer-col a {
+    color: var(--color-ink-soft);
+    font-size: 0.92rem;
+  }
+
+  .footer-col a:hover {
+    color: var(--color-blue-bright);
+  }
+
+  .footer-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--color-line-soft);
+    color: var(--color-ink-mute);
+    font-size: 0.78rem;
+  }
+
+  @media (max-width: 720px) {
+    .footer-inner { grid-template-columns: 1fr; gap: 2rem; }
+    .footer-bottom { flex-direction: column; gap: 0.5rem; text-align: center; }
+  }
+</style>

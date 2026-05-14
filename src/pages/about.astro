@@ -1,0 +1,120 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { SITE } from '../consts';
+---
+
+<BaseLayout title="About" description="About AI Experts and the people behind it.">
+  <section class="about">
+    <div class="container-narrow">
+      <span class="eyebrow">// readme</span>
+      <h1>About AI Experts</h1>
+
+      <p class="lead">
+        <strong>AI Experts</strong> is a small collective of practitioners writing
+        about what we're learning, building, and breaking. Founded and maintained
+        by <strong>Raymond Kipngetich</strong>, with contributions from a growing
+        circle of friends and colleagues.
+      </p>
+
+      <h2>What we write about</h2>
+      <p>
+        Mostly <strong>AI</strong> — running local models, fine-tuning,
+        agent experiments, applied research — plus the <strong>infrastructure</strong>
+        that makes any of it work: self-hosting, Docker, networking, observability,
+        and the home labs we run it all on.
+      </p>
+
+      <p>
+        We write things down so we can find them again later — and so other people
+        searching for the same problem at 2 AM don't have to start from zero.
+      </p>
+
+      <h2>Contributing</h2>
+      <p>
+        Posts and comments come from a trusted group of contributors. If you'd
+        like to contribute a post or have an idea worth writing up, get in touch.
+      </p>
+
+      <h2>The setup</h2>
+      <p>
+        Site is built with <a href="https://astro.build" target="_blank" rel="noopener">Astro</a>,
+        deployed on the edge, written entirely in Markdown. Posts live as plain files
+        in a Git repo — push to deploy, no CMS, no database.
+      </p>
+
+      <h2>Get in touch</h2>
+      <p>
+        Found a typo, want to chat about something we wrote, or have a question?
+      </p>
+
+      <ul class="contact-list">
+        <li>
+          <span class="contact-label mono">email</span>
+          <a href={`mailto:${SITE.email}`}>{SITE.email}</a>
+        </li>
+        <li>
+          <span class="contact-label mono">github</span>
+          <a href={SITE.github} target="_blank" rel="noopener">{SITE.github}</a>
+        </li>
+        <li>
+          <span class="contact-label mono">twitter</span>
+          <a href={SITE.twitter} target="_blank" rel="noopener">{SITE.twitter}</a>
+        </li>
+        <li>
+          <span class="contact-label mono">rss</span>
+          <a href="/rss.xml">/rss.xml</a>
+        </li>
+      </ul>
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .about {
+    padding: 3rem 0 4rem;
+  }
+
+  h1 {
+    margin: 0.5rem 0 1.5rem;
+  }
+
+  .lead {
+    font-size: 1.2rem;
+    line-height: 1.55;
+    color: var(--color-ink-soft);
+    margin-bottom: 2.5rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--color-line);
+  }
+
+  .lead strong {
+    color: var(--color-blue-deep);
+  }
+
+  .contact-list {
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .contact-list li {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: var(--color-paper);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius);
+    align-items: center;
+  }
+
+  .contact-label {
+    font-size: 0.75rem;
+    color: var(--color-blue-bright);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+</style>

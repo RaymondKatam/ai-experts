@@ -1,0 +1,119 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostCard from '../../components/PostCard.astro';
+
+const posts = (await getCollection('blog', ({ data }) => !data.draft))
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+// Group by year
+const postsByYear = posts.reduce((acc, post) => {
+  const year = post.data.pubDate.getFullYear();
+  if (!acc[year]) acc[year] = [];
+  acc[year].push(post);
+  return acc;
+}, {} as Record<number, typeof posts>);
+
+const years = Object.keys(postsByYear).map(Number).sort((a, b) => b - a);
+---
+
+<BaseLayout title="All Posts" description="Every entry from the home lab — AI, infra, tutorials, and notes.">
+  <section class="page-head">
+    <div class="container">
+      <span class="eyebrow">// archive</span>
+      <h1>All posts</h1>
+      <p class="lead">
+        Everything I've written so far — {posts.length} {posts.length === 1 ? 'entry' : 'entries'}, sorted newest first.
+      </p>
+    </div>
+  </section>
+
+  <section class="archive">
+    <div class="container">
+      {years.length === 0 ? (
+        <div class="empty">
+          <p>No posts yet. Add a <code>.md</code> file in <code>src/content/blog/</code>.</p>
+        </div>
+      ) : (
+        years.map(year => (
+          <div class="year-group">
+            <div class="year-label mono">{year}</div>
+            <div class="post-grid">
+              {postsByYear[year].map(post => (
+                <PostCard
+                  href={`/blog/${post.id}/`}
+                  title={post.data.title}
+                  description={post.data.description}
+                  pubDate={post.data.pubDate}
+                  category={post.data.category}
+                  tags={post.data.tags}
+                />
+              ))}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  </section>
+</BaseLayout>
+
+<style>
+  .page-head {
+    padding: 3rem 0 2rem;
+  }
+
+  .page-head h1 {
+    margin: 0.5rem 0 0.75rem;
+  }
+
+  .lead {
+    color: var(--color-ink-soft);
+    font-size: 1.1rem;
+    max-width: 580px;
+  }
+
+  .archive {
+    padding-bottom: 3rem;
+  }
+
+  .year-group {
+    margin-bottom: 3rem;
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 2rem;
+  }
+
+  .year-label {
+    font-size: 1.5rem;
+    color: var(--color-blue-bright);
+    font-weight: 600;
+    position: sticky;
+    top: 90px;
+    align-self: start;
+  }
+
+  .post-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .empty {
+    text-align: center;
+    padding: 3rem;
+    background: var(--color-paper);
+    border: 1px dashed var(--color-line);
+    border-radius: var(--radius-lg);
+    color: var(--color-ink-mute);
+  }
+
+  @media (max-width: 640px) {
+    .year-group {
+      grid-template-columns: 1fr;
+      gap: 0.75rem;
+    }
+    .year-label {
+      position: static;
+    }
+  }
+</style>
