@@ -1,0 +1,275 @@
+---
+title: 'MCP under the hood: a technical walkthrough'
+description: 'The Model Context Protocol is not magic. It is JSON-RPC 2.0, three primitives, and two transports. Here is what actually flows over the wire.'
+pubDate: 2026-05-24
+author: 'Raymond Kipngetich'
+category: ai
+tags: ['mcp', 'protocols', 'agents', 'json-rpc']
+---
+
+Most "what is MCP" posts stop at the analogy: *"it's USB-C for AI tools."* That is technically correct and operationally useless. If you actually want to write an MCP server, debug a broken connection, or reason about why your agent is slow, you need the mechanics.
+
+This post is the mechanics. We will look at the wire format, the architecture, the three primitives, and what is changing in the 2026-07-28 release candidate.
+
+## What MCP is, precisely
+
+The Model Context Protocol is an open specification, originally released by Anthropic in November 2024 and donated to the Linux Foundation's Agentic AI Foundation in December 2025. As of early 2026 it has surpassed 97 million monthly SDK downloads and is supported natively by Anthropic, OpenAI, Google, Microsoft, and AWS.
+
+Stripped to essentials, MCP is three things stacked together:
+
+1. **A wire format**: JSON-RPC 2.0
+2. **A three-role architecture**: host, client, server
+3. **A typed capability surface**: tools, resources, prompts (plus a few extensions)
+
+That is the whole protocol. Everything else is convention, SDKs, or transport choice.
+
+## The architecture
+
+Most diagrams of MCP show two boxes, "LLM" and "tool", connected by an arrow. That diagram is wrong. The real picture has three layers, and the distinction matters because the host and the client are not the same thing:
+
+<figure>
+<svg viewBox="0 0 760 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MCP three-role architecture">
+  <defs>
+    <marker id="mcpArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+  <rect x="40" y="30" width="680" height="120" rx="8" fill="#eff4ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="60" y="55" font-family="JetBrains Mono, monospace" font-size="11" font-weight="600" fill="#0c2461">// HOST PROCESS (e.g. Claude Desktop, Cursor, your agent runtime)</text>
+  <rect x="80" y="75" width="180" height="60" rx="6" fill="#fff" stroke="#0c2461" stroke-width="1.5"/>
+  <text x="170" y="98" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="13" font-weight="600" fill="#0a1628">LLM + orchestrator</text>
+  <text x="170" y="118" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">decides which tool to call</text>
+  <rect x="290" y="75" width="130" height="60" rx="6" fill="#fff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="355" y="98" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" font-weight="600" fill="#0c2461">MCP Client A</text>
+  <text x="355" y="118" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">1 client per server</text>
+  <rect x="440" y="75" width="130" height="60" rx="6" fill="#fff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="505" y="98" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" font-weight="600" fill="#0c2461">MCP Client B</text>
+  <text x="505" y="118" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">isolated session</text>
+  <rect x="590" y="75" width="110" height="60" rx="6" fill="#fff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="645" y="98" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" font-weight="600" fill="#0c2461">Client C</text>
+  <text x="645" y="118" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">...etc</text>
+  <line x1="355" y1="135" x2="355" y2="230" stroke="#2563eb" stroke-width="1.5" marker-end="url(#mcpArrow)"/>
+  <line x1="505" y1="135" x2="505" y2="230" stroke="#2563eb" stroke-width="1.5" marker-end="url(#mcpArrow)"/>
+  <line x1="645" y1="135" x2="645" y2="230" stroke="#2563eb" stroke-width="1.5" marker-end="url(#mcpArrow)"/>
+  <text x="375" y="175" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b" font-style="italic">JSON-RPC 2.0 over stdio or HTTP</text>
+  <text x="375" y="190" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b" font-style="italic">tools/list, tools/call, ...</text>
+  <rect x="290" y="230" width="130" height="100" rx="6" fill="#fff" stroke="#0a1628" stroke-width="1.5"/>
+  <text x="355" y="255" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="13" font-weight="600" fill="#0a1628">MCP Server</text>
+  <text x="355" y="276" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">github</text>
+  <text x="355" y="292" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#64748b">exposes: list_issues,</text>
+  <text x="355" y="306" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#64748b">create_pr, get_file...</text>
+  <rect x="440" y="230" width="130" height="100" rx="6" fill="#fff" stroke="#0a1628" stroke-width="1.5"/>
+  <text x="505" y="255" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="13" font-weight="600" fill="#0a1628">MCP Server</text>
+  <text x="505" y="276" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">postgres</text>
+  <text x="505" y="292" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#64748b">exposes: query,</text>
+  <text x="505" y="306" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#64748b">describe_table...</text>
+  <rect x="590" y="230" width="110" height="100" rx="6" fill="#fff" stroke="#0a1628" stroke-width="1.5"/>
+  <text x="645" y="255" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="13" font-weight="600" fill="#0a1628">MCP Server</text>
+  <text x="645" y="276" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">slack</text>
+  <text x="645" y="292" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#64748b">post_message,</text>
+  <text x="645" y="306" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#64748b">search...</text>
+  <text x="60" y="360" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">one host -> many clients -> one client per server (1:1 sessions)</text>
+</svg>
+</figure>
+
+The asymmetry is intentional. The host can run inside any LLM application — Claude Desktop, Cursor, your agent runtime, a CLI. The host spawns one MCP client per server, and each client maintains an isolated JSON-RPC session. A server has no idea other clients exist; it just answers requests. The host is the only thing that knows the full picture of what tools are available.
+
+This matters because **security and consent live in the host**, not the server. The server can declare a tool called `delete_database`, but the host decides whether to surface it to the model and whether to ask the user before invoking it.
+
+## The wire format
+
+Every MCP message is a JSON-RPC 2.0 envelope. There are three kinds:
+
+```json
+{ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }
+```
+
+That is a **request**. The server replies with a **response** sharing the same `id`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "name": "get_weather",
+        "description": "Get the current weather for a location",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "location": { "type": "string" }
+          },
+          "required": ["location"]
+        }
+      }
+    ]
+  }
+}
+```
+
+Either side can also send **notifications** — fire-and-forget messages with no `id` and no reply:
+
+```json
+{ "jsonrpc": "2.0", "method": "notifications/tools/list_changed" }
+```
+
+That tells the client "my tool list just changed, re-fetch it." This bidirectionality is one of the underappreciated parts of the protocol. Servers can push updates to clients; servers can also call *back* to the client for things like `sampling/createMessage` (asking the host's LLM to generate something on the server's behalf).
+
+## The three primitives
+
+A server's job is to expose capabilities. MCP defines three categories:
+
+<figure>
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The three MCP primitives">
+  <rect x="40" y="40" width="220" height="200" rx="8" fill="#eff4ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="150" y="70" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="16" font-weight="600" fill="#0c2461">Tools</text>
+  <text x="150" y="92" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#2563eb">model-controlled</text>
+  <text x="150" y="120" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="11" fill="#0a1628">executable actions</text>
+  <text x="150" y="140" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="11" fill="#0a1628">side effects allowed</text>
+  <line x1="60" y1="160" x2="240" y2="160" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="150" y="180" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">tools/list</text>
+  <text x="150" y="196" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">tools/call</text>
+  <text x="150" y="225" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#94a3b8" font-style="italic">e.g. send_email, run_query</text>
+  <rect x="270" y="40" width="220" height="200" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="380" y="70" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="16" font-weight="600" fill="#0a1628">Resources</text>
+  <text x="380" y="92" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">app-controlled</text>
+  <text x="380" y="120" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="11" fill="#0a1628">read-only data</text>
+  <text x="380" y="140" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="11" fill="#0a1628">addressable by URI</text>
+  <line x1="290" y1="160" x2="470" y2="160" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="380" y="180" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">resources/list</text>
+  <text x="380" y="196" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">resources/read</text>
+  <text x="380" y="225" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#94a3b8" font-style="italic">e.g. file://, git://, db://</text>
+  <rect x="500" y="40" width="220" height="200" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="610" y="70" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="16" font-weight="600" fill="#0a1628">Prompts</text>
+  <text x="610" y="92" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">user-controlled</text>
+  <text x="610" y="120" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="11" fill="#0a1628">reusable templates</text>
+  <text x="610" y="140" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="11" fill="#0a1628">parameterized</text>
+  <line x1="520" y1="160" x2="700" y2="160" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="610" y="180" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">prompts/list</text>
+  <text x="610" y="196" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">prompts/get</text>
+  <text x="610" y="225" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#94a3b8" font-style="italic">e.g. /summarize, /review-pr</text>
+</svg>
+</figure>
+
+The control-axis labels are not decorative. They define who decides when each primitive is used:
+
+- **Tools** are *model-controlled*: the LLM looks at the user's request, decides to call `send_email`, and the host executes it (optionally after user confirmation)
+- **Resources** are *application-controlled*: the host attaches relevant resources to the context window automatically, like file contents in an IDE
+- **Prompts** are *user-controlled*: the user explicitly invokes them, typically via a slash command in the host UI
+
+Treating tools and resources as interchangeable is the most common architectural mistake in new MCP servers. A database query that returns text might feel like a tool, but if it has no side effects and you want the host to attach results automatically, it is a resource. The distinction shapes how the host surfaces it to the model.
+
+## A real session, message by message
+
+Here is what a complete tool call looks like on the wire. The client connects to a weather server, lists its tools, and calls one:
+
+<figure>
+<svg viewBox="0 0 760 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MCP sequence diagram">
+  <line x1="180" y1="60" x2="180" y2="430" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4,4"/>
+  <line x1="580" y1="60" x2="580" y2="430" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4,4"/>
+  <rect x="110" y="30" width="140" height="40" rx="6" fill="#eff4ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="180" y="55" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="13" font-weight="600" fill="#0c2461">MCP Client</text>
+  <rect x="510" y="30" width="140" height="40" rx="6" fill="#fff" stroke="#0a1628" stroke-width="1.5"/>
+  <text x="580" y="55" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="13" font-weight="600" fill="#0a1628">MCP Server</text>
+  <line x1="180" y1="100" x2="580" y2="100" stroke="#2563eb" stroke-width="1.5"/>
+  <polygon points="580,100 570,95 570,105" fill="#2563eb"/>
+  <text x="380" y="93" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#0c2461" font-weight="600">initialize &#123; protocolVersion, capabilities &#125;</text>
+  <line x1="580" y1="135" x2="180" y2="135" stroke="#64748b" stroke-width="1.5"/>
+  <polygon points="180,135 190,130 190,140" fill="#64748b"/>
+  <text x="380" y="128" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">&#123; serverInfo, capabilities &#125;</text>
+  <line x1="180" y1="170" x2="580" y2="170" stroke="#2563eb" stroke-width="1.5"/>
+  <polygon points="580,170 570,165 570,175" fill="#2563eb"/>
+  <text x="380" y="163" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#0c2461" font-weight="600">notifications/initialized</text>
+  <text x="380" y="218" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#94a3b8" font-style="italic">— session established —</text>
+  <line x1="180" y1="250" x2="580" y2="250" stroke="#2563eb" stroke-width="1.5"/>
+  <polygon points="580,250 570,245 570,255" fill="#2563eb"/>
+  <text x="380" y="243" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#0c2461" font-weight="600">tools/list</text>
+  <line x1="580" y1="285" x2="180" y2="285" stroke="#64748b" stroke-width="1.5"/>
+  <polygon points="180,285 190,280 190,290" fill="#64748b"/>
+  <text x="380" y="278" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">[ &#123; name: "get_weather", inputSchema: &#123;...&#125; &#125; ]</text>
+  <line x1="180" y1="325" x2="580" y2="325" stroke="#2563eb" stroke-width="1.5"/>
+  <polygon points="580,325 570,320 570,330" fill="#2563eb"/>
+  <text x="380" y="318" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#0c2461" font-weight="600">tools/call &#123; name: "get_weather", args: &#123;...&#125; &#125;</text>
+  <line x1="580" y1="365" x2="180" y2="365" stroke="#64748b" stroke-width="1.5"/>
+  <polygon points="180,365 190,360 190,370" fill="#64748b"/>
+  <text x="380" y="358" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">&#123; content: [&#123; type: "text", text: "72F, sunny" &#125;] &#125;</text>
+  <text x="380" y="410" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#94a3b8" font-style="italic">— LLM receives result, continues reasoning —</text>
+</svg>
+</figure>
+
+Every interaction follows this shape. The handshake establishes protocol version and capabilities, then everything else is `*/list` and `*/call` or `*/read` against the three primitives.
+
+## The two transports
+
+MCP itself is transport-agnostic — it cares about the JSON-RPC envelope, not how bytes get from A to B. In practice you choose one of two transports:
+
+**stdio** — the server is a child process of the host. Messages flow over the child's stdin/stdout. This is what almost every local MCP server uses today (filesystem access, local databases, dev tools). Zero network exposure, trivial to secure, but only works on the same machine.
+
+**Streamable HTTP** — replaces the older HTTP+SSE transport. The client makes POST requests to a single endpoint, and the server can stream responses back. This is what enables remote MCP servers running as cloud services.
+
+The big news for 2026 is the protocol going **stateless** at the HTTP layer in the upcoming `2026-07-28` release candidate. Current servers have to hold session state, which prevents horizontal scaling behind load balancers — every request from the same session has to land on the same instance. The new spec standardizes session creation, resumption, and migration so a request can hit any backend behind a load balancer. This is what production deployments have been waiting for.
+
+## A minimal server in Python
+
+Here is a complete MCP server that exposes one tool. About 25 lines:
+
+```python
+# pip install mcp
+
+from mcp.server.fastmcp import FastMCP
+import httpx
+
+mcp = FastMCP("weather")
+
+@mcp.tool()
+async def get_weather(city: str) -> str:
+    """Get the current weather for a city."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"https://wttr.in/{city}?format=3")
+        return resp.text
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+That is it. The `FastMCP` framework introspects the function signature and docstring to generate the JSON Schema for `inputSchema`. Connect Claude Desktop or any MCP client to this script and it can now call `get_weather`.
+
+For a remote server over HTTP, you change one line:
+
+```python
+mcp.run(transport="streamable-http", port=8000)
+```
+
+## What MCP is not
+
+A few common misunderstandings worth correcting:
+
+**MCP is not a replacement for REST APIs.** It is a protocol layered on top of your existing APIs, designed for LLMs to discover and invoke them.
+
+**MCP is not where you put your prompts.** The Prompts primitive is for user-invoked templates the host surfaces as slash commands. Your system prompt and few-shot examples still belong in your host application's orchestration layer.
+
+**MCP is not the same as A2A.** Agent-to-Agent (released by Google in April 2025) is a sibling protocol for agents talking to other agents. MCP is for an agent talking to its tools. In December 2025, both protocols were donated to the Linux Foundation's Agentic AI Foundation.
+
+**MCP does not solve authentication for you.** OAuth 2.1 and OpenID Connect alignment is improving in the new spec, but production deployments still require you to think carefully about scopes and token rotation.
+
+## When to build one yourself
+
+Build an MCP server when you have a service or data source that you want multiple LLM applications to access without writing custom adapters for each. The protocol's value is in the N-to-M reduction: instead of N hosts each writing M tool integrations, every host writes one MCP client and every service writes one MCP server.
+
+Do not build an MCP server when:
+
+- The tool is a single API call you control end-to-end. Just call the API.
+- You need streaming token-level output from a model. MCP is for tools, not for model serving.
+- The integration is one-off and ephemeral. The boilerplate is not worth it.
+
+The protocol's power is in being a standard. If you are the only one who will ever use it, it is just JSON over a pipe.
+
+## What I would read next
+
+- The MCP specification itself: [modelcontextprotocol.io/specification](https://modelcontextprotocol.io/specification)
+- The 2026 roadmap and 2026-07-28 release candidate posts on the official blog
+- The Python and TypeScript SDK source — both are short and very readable
+- The reference servers at [github.com/modelcontextprotocol/servers](https://github.com/modelcontextprotocol/servers)
+
+Next post in this thread: I am going to wire an MCP server into my homelab so I can ask Claude about my own infrastructure.
