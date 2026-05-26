@@ -1,12 +1,11 @@
-// Cloudflare Pages Function: POST /api/embed
-// Body: { "texts": ["sentence 1", "sentence 2", ...] }
-// Returns: { "vectors": [[...], [...], ...] }
-// Uses Workers AI native embedding model bge-base-en-v1.5 (768-dim).
+// Astro server endpoint: POST /api/embed
+// Runs on Cloudflare Workers via the @astrojs/cloudflare adapter.
+// Body: { "texts": ["sentence 1", ...] }
+// Returns: { "vectors": [[...], ...] }
 
-export async function onRequestPost(context) {
-  const { request, env } = context;
+export const prerender = false;
 
-  // CORS headers so we can call this from the page
+export async function POST({ request, locals }) {
   const headers = {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
@@ -23,7 +22,6 @@ export async function onRequestPost(context) {
       );
     }
 
-    // Cap to prevent abuse
     if (texts.length > 30) {
       return new Response(
         JSON.stringify({ error: 'Max 30 texts per request' }),
@@ -31,7 +29,6 @@ export async function onRequestPost(context) {
       );
     }
 
-    // Validate each text
     for (const t of texts) {
       if (typeof t !== 'string' || t.length === 0 || t.length > 1000) {
         return new Response(
@@ -41,7 +38,15 @@ export async function onRequestPost(context) {
       }
     }
 
-    // Call Workers AI binding
+    // Workers AI binding is available via Astro's locals.runtime.env on Cloudflare
+    const env = locals.runtime?.env;
+    if (!env || !env.AI) {
+      return new Response(
+        JSON.stringify({ error: 'Workers AI binding not available' }),
+        { status: 500, headers }
+      );
+    }
+
     const result = await env.AI.run('@cf/baai/bge-base-en-v1.5', { text: texts });
 
     return new Response(
@@ -56,8 +61,7 @@ export async function onRequestPost(context) {
   }
 }
 
-// Handle CORS preflight
-export async function onRequestOptions() {
+export async function OPTIONS() {
   return new Response(null, {
     headers: {
       'access-control-allow-origin': '*',

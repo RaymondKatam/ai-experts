@@ -1,11 +1,11 @@
-// Cloudflare Pages Function: POST /api/rerank
+// Astro server endpoint: POST /api/rerank
+// Runs on Cloudflare Workers via the @astrojs/cloudflare adapter.
 // Body: { "query": "...", "documents": ["...", "..."] }
-// Returns: { "scores": [0.92, 0.31, ...] } in same order as input documents
-// Uses Workers AI native reranker bge-reranker-base.
+// Returns: { "scores": [...] } in original document order
 
-export async function onRequestPost(context) {
-  const { request, env } = context;
+export const prerender = false;
 
+export async function POST({ request, locals }) {
   const headers = {
     'content-type': 'application/json',
     'access-control-allow-origin': '*',
@@ -39,14 +39,21 @@ export async function onRequestPost(context) {
       }
     }
 
-    // Call Workers AI reranker
+    const env = locals.runtime?.env;
+    if (!env || !env.AI) {
+      return new Response(
+        JSON.stringify({ error: 'Workers AI binding not available' }),
+        { status: 500, headers }
+      );
+    }
+
     const result = await env.AI.run('@cf/baai/bge-reranker-base', {
       query,
       contexts: documents.map((text) => ({ text })),
     });
 
-    // result.response is an array of { id, score } sorted by score desc.
-    // Map back to original input order so the frontend can compare to its own list.
+    // result.response: array of { id, score } sorted desc.
+    // Map back to original input order.
     const scoresInOriginalOrder = new Array(documents.length).fill(0);
     for (const item of result.response) {
       scoresInOriginalOrder[item.id] = item.score;
@@ -64,7 +71,7 @@ export async function onRequestPost(context) {
   }
 }
 
-export async function onRequestOptions() {
+export async function OPTIONS() {
   return new Response(null, {
     headers: {
       'access-control-allow-origin': '*',
