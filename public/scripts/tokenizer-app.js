@@ -1,6 +1,7 @@
-// Interactive tokenizer visualization
-// Loads gpt-tokenizer (GPT-4o encoding) and renders token breakdowns
-// for two side-by-side text inputs.
+// Interactive tokenizer visualization — v2
+// Loads gpt-tokenizer's UMD bundle (o200k_base, GPT-4o encoding) via <script> tag.
+// This avoids dynamic ES module import issues; the global window.GPTTokenizer_o200k_base
+// is exposed by the bundle.
 
 const statusEl = document.getElementById('tok-status');
 const leftInput = document.getElementById('tok-input-left');
@@ -12,20 +13,35 @@ const examplesContainer = document.getElementById('tok-examples');
 let encode = null;
 let decode = null;
 
-// 10 distinct colors for token pills, cycled through.
-// Soft palette so the page doesn't look like a Christmas tree.
+// Soft pastel palette for token pills
 const TOKEN_COLORS = [
   '#dbeafe', '#fce7f3', '#fef3c7', '#d1fae5', '#e0e7ff',
   '#fed7aa', '#cffafe', '#f5d0fe', '#fee2e2', '#ddd6fe',
 ];
 
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) return resolve();
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('script load failed: ' + src));
+    document.head.appendChild(s);
+  });
+}
+
 async function init() {
   try {
-    statusEl.textContent = 'Loading gpt-tokenizer (o200k_base, ~150KB)...';
-    // o200k_base is the encoding used by gpt-4o.
-    const mod = await import('https://cdn.jsdelivr.net/npm/gpt-tokenizer@2.5.2/esm/encoding/o200k_base.js');
-    encode = mod.encode;
-    decode = mod.decode;
+    statusEl.textContent = 'Loading GPT-4o tokenizer bundle (~1.5MB)...';
+    // UMD bundle exposes window.GPTTokenizer_o200k_base
+    await loadScript('https://cdn.jsdelivr.net/npm/gpt-tokenizer@2.5.2/dist/o200k_base.js');
+    const lib = window.GPTTokenizer_o200k_base;
+    if (!lib || typeof lib.encode !== 'function') {
+      throw new Error('library loaded but exports missing');
+    }
+    encode = lib.encode;
+    decode = lib.decode;
     statusEl.textContent = 'Ready. Type in either box to see live tokenization.';
     render();
   } catch (err) {
@@ -37,7 +53,6 @@ async function init() {
 function tokenize(text) {
   if (!text) return [];
   const ids = encode(text);
-  // Decode each id back to its string piece so we can render the actual text.
   return ids.map((id) => ({ id, piece: decode([id]) }));
 }
 
@@ -47,13 +62,10 @@ function renderTokens(tokens) {
   }
   const pills = tokens.map((t, i) => {
     const color = TOKEN_COLORS[i % TOKEN_COLORS.length];
-    // Display the actual token text. Replace leading space with a visible glyph,
-    // newlines with ↵, so whitespace is visible.
     let display = t.piece
-      .replace(/^ /, '·')           // leading space → middle dot
-      .replace(/\n/g, '↵')          // newline → arrow
-      .replace(/\t/g, '⇥');         // tab → arrow
-    // Escape HTML
+      .replace(/^ /, '·')
+      .replace(/\n/g, '↵')
+      .replace(/\t/g, '⇥');
     display = display.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return `<span style="display:inline-block;background:${color};border:1px solid rgba(0,0,0,0.05);border-radius:4px;padding:0.2rem 0.45rem;margin:0.15rem 0.15rem 0.15rem 0;font-family:'JetBrains Mono',monospace;font-size:0.82rem;color:#0a1628;white-space:pre;" title="token id: ${t.id}">${display}</span>`;
   }).join('');
@@ -85,7 +97,6 @@ function render() {
     renderColumn('Correct', leftTokens.length, renderTokens(leftTokens), '#10b981') +
     renderColumn('Misspelled', rightTokens.length, renderTokens(rightTokens), '#dc2626');
 
-  // Summary
   if (leftText.trim() === '' && rightText.trim() === '') {
     summaryEl.style.display = 'none';
     return;
@@ -95,8 +106,7 @@ function render() {
   const pctMore = leftTokens.length > 0
     ? Math.round((rightTokens.length / leftTokens.length - 1) * 100)
     : null;
-  // GPT-4o pricing approx (May 2026): $2.50 / 1M input tokens.
-  // If a user sent the misspelled version 1000 times instead of the correct one:
+  // GPT-4o input pricing ~ $2.50 per 1M tokens
   const dollarCostExtra = (diff * 1000 / 1_000_000) * 2.5;
 
   let summaryText;
@@ -106,12 +116,11 @@ function render() {
   } else if (diff < 0) {
     summaryText = `Misspelled actually costs ${-diff} <i>fewer</i> tokens (rare — usually means the "correct" text contains an even rarer word).`;
   } else {
-    summaryText = `Both versions tokenize to the same number of tokens (${leftTokens.length}). Try one of the examples below to see the typical case.`;
+    summaryText = `Both versions tokenize to the same number of tokens (${leftTokens.length}). Try one of the examples below.`;
   }
   summaryEl.innerHTML = summaryText;
 }
 
-// Debounced live update
 let debounceId = null;
 function scheduleRender() {
   if (debounceId) clearTimeout(debounceId);
@@ -121,7 +130,6 @@ function scheduleRender() {
 leftInput.addEventListener('input', scheduleRender);
 rightInput.addEventListener('input', scheduleRender);
 
-// Example buttons
 examplesContainer.querySelectorAll('.tok-example').forEach((btn) => {
   btn.addEventListener('click', () => {
     leftInput.value = btn.dataset.left;
