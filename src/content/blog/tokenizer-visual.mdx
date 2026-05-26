@@ -1,0 +1,162 @@
+---
+title: 'How misspellings wreck tokenization (and quietly cost you money)'
+description: 'A typo is not just embarrassing. To the model, it can be the difference between one token and twelve. Live demo of GPT-4o tokenization on correctly spelled vs misspelled text.'
+pubDate: 2026-05-26
+author: 'Raymond Kipngetich'
+category: ai
+tags: ['tokenization', 'llm', 'bpe', 'visualization', 'interactive']
+---
+
+Type "antidisestablishmentarianism" into GPT-4o and the model sees a single token. Type "antidiestableshmentariansim" — the same word with three letters out of place — and the model sees twelve tokens. The meaning is gone. The cost just multiplied by twelve. You paid for both, and one of them was useful.
+
+This is not a quirk. It is how every modern large language model reads text. Below is a live demo running the actual GPT-4o tokenizer in your browser. Type into either box and watch what happens.
+
+<div id="tok-app" style="background: var(--color-paper); border: 1px solid var(--color-line); border-radius: 8px; padding: 1.5rem; margin: 1.5rem 0;">
+
+<div id="tok-status" style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #64748b; margin-bottom: 1rem;">
+  Loading tokenizer (~150KB)...
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+  <div>
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: #10b981; margin-bottom: 0.4rem; font-weight: 600;">Correct spelling</div>
+    <textarea id="tok-input-left" rows="3" style="width: 100%; padding: 0.6rem 0.7rem; border: 1px solid #cbd5e1; border-radius: 4px; font-family: inherit; font-size: 0.95rem; resize: vertical; box-sizing: border-box;">The quick brown fox jumps over the lazy dog.</textarea>
+  </div>
+  <div>
+    <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: #dc2626; margin-bottom: 0.4rem; font-weight: 600;">With misspellings</div>
+    <textarea id="tok-input-right" rows="3" style="width: 100%; padding: 0.6rem 0.7rem; border: 1px solid #cbd5e1; border-radius: 4px; font-family: inherit; font-size: 0.95rem; resize: vertical; box-sizing: border-box;">The quik brwn fox jmps ovr the lzy dawg.</textarea>
+  </div>
+</div>
+
+<div id="tok-results" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; min-height: 80px;">
+  <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #94a3b8; padding: 1rem; text-align: center;">tokens will appear here</div>
+  <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #94a3b8; padding: 1rem; text-align: center;">tokens will appear here</div>
+</div>
+
+<div id="tok-summary" style="margin-top: 1rem; padding: 0.9rem; background: #eff4ff; border: 1px solid #2563eb; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #0c2461; display: none;"></div>
+
+<div style="margin-top: 1rem; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.5rem;">try these examples:</div>
+<div id="tok-examples" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+  <button class="tok-example" data-left="antidisestablishmentarianism" data-right="antidiestableshmentariansim" style="padding: 0.4rem 0.7rem; background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; cursor: pointer; color: #334155;">long word</button>
+  <button class="tok-example" data-left="JavaScript" data-right="JavScrpt" style="padding: 0.4rem 0.7rem; background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; cursor: pointer; color: #334155;">tech term</button>
+  <button class="tok-example" data-left="Mississippi" data-right="Mississipi" style="padding: 0.4rem 0.7rem; background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; cursor: pointer; color: #334155;">proper noun</button>
+  <button class="tok-example" data-left="entrepreneur receives accommodation" data-right="entreprenuer recieves accomodation" style="padding: 0.4rem 0.7rem; background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; cursor: pointer; color: #334155;">common mistakes</button>
+  <button class="tok-example" data-left="The CEO scheduled a meeting" data-right="teh ceo scheduld a meting" style="padding: 0.4rem 0.7rem; background: #fff; border: 1px solid #cbd5e1; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; cursor: pointer; color: #334155;">sentence with typos</button>
+</div>
+
+</div>
+
+<script type="module" src="/scripts/tokenizer-app.js"></script>
+
+## Why tokenizers exist at all
+
+A language model does not read characters and it does not read words. It reads **tokens** — chunks of text that the model's vocabulary recognizes as atomic units. GPT-4o has roughly 200,000 tokens in its vocabulary. The tokenizer's job is to chop any input string into the longest sequence of these chunks that covers it.
+
+When the chunks line up nicely with English words — which they do for nearly every common word in well-spelled text — you get one token per word. When the chunks don't fit, the tokenizer falls back to smaller and smaller pieces until it can cover the input at the character level.
+
+That fallback is what you saw with the misspelled example. The tokenizer knew about "antidisestablishmentarianism" because it appears in training data verbatim. It had no entry for "antidiestableshmentariansim" because no one has ever written that. So it broke the string into fragments — "anti", "die", "stable", "sh", "ment", and so on — that *do* exist. The cost is twelve tokens for a string that should have been one.
+
+## A brief intuition for byte-pair encoding
+
+The algorithm that produces these tokens is called Byte-Pair Encoding (BPE). The idea is straightforward:
+
+<figure>
+<svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Byte-pair encoding training process">
+  <defs>
+    <marker id="bpeArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+  <rect x="20" y="30" width="170" height="60" rx="6" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="105" y="55" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" font-weight="600" fill="#0a1628">Step 1: start</text>
+  <text x="105" y="75" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">each char is a token</text>
+  <text x="40" y="105" font-family="JetBrains Mono, monospace" font-size="11" fill="#334155">[t][h][e]_[c][a][t]</text>
+  <line x1="200" y1="60" x2="245" y2="60" stroke="#2563eb" stroke-width="1.5" marker-end="url(#bpeArrow)"/>
+  <rect x="255" y="30" width="220" height="60" rx="6" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="365" y="55" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" font-weight="600" fill="#0a1628">Step 2: count pairs</text>
+  <text x="365" y="75" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">"th" appears 800k times</text>
+  <text x="265" y="105" font-family="JetBrains Mono, monospace" font-size="11" fill="#334155">th: 800k · he: 600k · _c: 200k</text>
+  <line x1="485" y1="60" x2="530" y2="60" stroke="#2563eb" stroke-width="1.5" marker-end="url(#bpeArrow)"/>
+  <rect x="540" y="30" width="200" height="60" rx="6" fill="#eff4ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="640" y="55" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" font-weight="600" fill="#0c2461">Step 3: merge winner</text>
+  <text x="640" y="75" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">"t"+"h" becomes "th"</text>
+  <text x="550" y="105" font-family="JetBrains Mono, monospace" font-size="11" fill="#334155">[th][e]_[c][a][t]</text>
+  <line x1="640" y1="125" x2="640" y2="155" stroke="#2563eb" stroke-width="1.5" marker-end="url(#bpeArrow)"/>
+  <rect x="540" y="155" width="200" height="55" rx="6" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="640" y="178" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" font-weight="600" fill="#0a1628">Repeat 50,000 times</text>
+  <text x="640" y="197" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">until vocab is full</text>
+  <line x1="540" y1="180" x2="495" y2="180" stroke="#2563eb" stroke-width="1.5" marker-end="url(#bpeArrow)"/>
+  <rect x="275" y="155" width="220" height="55" rx="6" fill="#0c2461" stroke="#0c2461"/>
+  <text x="385" y="180" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="13" font-weight="600" fill="#fff">Final: vocabulary of</text>
+  <text x="385" y="200" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#a5b4fc">~200,000 tokens</text>
+  <text x="380" y="255" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#94a3b8" font-style="italic">Common strings collapse into single tokens.</text>
+  <text x="380" y="270" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#94a3b8" font-style="italic">Rare strings stay as their constituent pieces.</text>
+  <line x1="40" y1="295" x2="720" y2="295" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="380" y="310" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#94a3b8">"The"=1 token · "Thxe"=3 tokens. The tokenizer never saw "Thxe" during training.</text>
+</svg>
+</figure>
+
+Start with every character as its own token. Count which adjacent pairs appear most often in the training corpus. Merge the most common pair into a new token. Repeat. After tens of thousands of merges, the vocabulary contains common words ("the", "and"), common suffixes ("ing", "ed"), common roots ("estab", "lish"), and a long tail of rarer pieces. Anything the merge process never reached stays at the character level.
+
+This is why a misspelling is so expensive. The tokenizer's merges are frozen at training time. When you type "recieve" instead of "receive", it cannot adapt. The string "recieve" was never frequent enough during training to deserve its own token. So the tokenizer splits it: probably "rec", "iev", "e" — three tokens for what should have been one.
+
+## Why this actually matters
+
+Tokenization sits between you and the model in a way that is easy to forget about. Three concrete costs hit you when text tokenizes badly:
+
+<figure>
+<svg viewBox="0 0 760 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three costs of bad tokenization">
+  <rect x="20" y="20" width="230" height="170" rx="6" fill="#fafbfc" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="135" y="50" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="14" font-weight="600" fill="#0a1628">1. Money</text>
+  <text x="135" y="80" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">You pay per token,</text>
+  <text x="135" y="95" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">in and out.</text>
+  <text x="135" y="135" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" fill="#dc2626" font-weight="600">2x tokens =</text>
+  <text x="135" y="155" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" fill="#dc2626" font-weight="600">2x bill</text>
+  <rect x="270" y="20" width="230" height="170" rx="6" fill="#fafbfc" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="385" y="50" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="14" font-weight="600" fill="#0a1628">2. Context window</text>
+  <text x="385" y="80" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">Bad tokens fill up</text>
+  <text x="385" y="95" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">your context faster.</text>
+  <text x="385" y="135" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" fill="#dc2626" font-weight="600">Less room for</text>
+  <text x="385" y="155" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" fill="#dc2626" font-weight="600">real content</text>
+  <rect x="520" y="20" width="230" height="170" rx="6" fill="#fafbfc" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="635" y="50" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="14" font-weight="600" fill="#0a1628">3. Model confusion</text>
+  <text x="635" y="80" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">"recieve" tokenizes</text>
+  <text x="635" y="95" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">like nothing familiar.</text>
+  <text x="635" y="135" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" fill="#dc2626" font-weight="600">Worse answers</text>
+  <text x="635" y="155" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" fill="#dc2626" font-weight="600">from bad input</text>
+</svg>
+</figure>
+
+The first two are easy to measure. The third is more subtle but probably most important. When the model sees the token sequence for "receive", it sees a single embedding that lives near other verbs about getting and accepting. When it sees the sequence for "recieve" — three fragments that mean nothing in isolation — it has to reconstruct the intended word from scratch using context. Modern LLMs are good enough to usually succeed, but they are working harder, and on hard prompts that work matters.
+
+## Why the demo above looks the way it does
+
+A few things worth pointing out about what you saw when you typed:
+
+**The leading space matters.** Notice that " apple" (with a leading space) is one token, but "apple" at the start of a sentence is also one token — they are different tokens internally. The tokenizer handles word boundaries by attaching the space to the next word. This is why pasting text without preserving spaces sometimes tokenizes worse than you'd expect.
+
+**Common words win big.** Type any word that appears frequently in English — "the", "and", "because", "government" — and it costs one token. Type a rare variant — "governement" — and the cost can triple. The vocabulary was tuned for what people actually wrote, so it rewards common usage.
+
+**Capitalization changes things.** "JavaScript" is one token. "JAVASCRIPT" is three. The tokenizer treats casing as semantically meaningful, which it sometimes is, but it also means that shouty text or randomly capitalized text costs more.
+
+**Code tokenizes surprisingly well.** Programming languages have many repeated keywords that BPE captures efficiently. A line like `for (let i = 0; i < arr.length; i++)` tokenizes to about ten tokens, despite looking dense. The tokenizer has seen a lot of code.
+
+## What to actually do about this
+
+A few practical takeaways:
+
+For **production systems** that call LLM APIs at scale: validate and clean user input. Run a fast spell-check pass before sending text to a paid API. The cost savings on a high-volume system can be significant, and the model gets better input as a bonus.
+
+For **prompt engineers**: when you find your prompts running long, look at the tokenizer view (OpenAI's tokenizer is at `platform.openai.com/tokenizer`). Often you can cut tokens by rephrasing — using a common synonym for a rare word, removing redundant capitalization, fixing the typos you didn't notice.
+
+For **everyone else**: when ChatGPT or Claude gives you a worse-than-expected answer on a quick question, try retyping it without typos. You may have been asking the question in a way the model literally could not see clearly.
+
+## Notes on tokenizers for non-English languages
+
+A final point worth knowing: the tokenization disadvantage is much larger for languages that were underrepresented in the training data. A Spanish sentence with 10 words might tokenize to 15 tokens; the same idea in Swahili could tokenize to 40 or more. Common Chinese characters mostly get their own tokens, but rare ones fragment. This is one of the practical reasons LLMs perform unevenly across languages — the input is literally more expensive and less coherent before reasoning even starts.
+
+Try typing some non-English text in the demo above if you read another language. The contrast is often striking.
+
+## What I would build next
+
+Next post in this thread: a working spell-check preprocessor as a Cloudflare Worker that sits in front of an LLM API call, with token savings measured before and after on a sample of real user queries.
