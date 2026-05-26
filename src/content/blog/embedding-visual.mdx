@@ -1,0 +1,105 @@
+---
+title: 'Visual explanation of Embedding in RAG'
+description: 'An interactive 3D visualization that runs a real embedding model in your browser. Type your own sentences and watch them snap into semantic clusters.'
+pubDate: 2026-05-26
+author: 'Raymond Kipngetich'
+category: ai
+tags: ['rag', 'embeddings', 'visualization', 'interactive']
+---
+
+The hardest part of explaining RAG to anyone is convincing them that "meaning" can be a point in space. Reading about cosine similarity does not help. Watching it happen does.
+
+This post is an interactive 3D plot. It runs a real embedding model — `all-MiniLM-L6-v2`, the same one I used in [the previous RAG post](/blog/rag-explained/) — directly in your browser. No backend, no API key, no data leaving your machine. The model is about 30MB and downloads once on first use, then runs locally forever.
+
+Type a sentence at the bottom, hit Embed, and watch where it lands. Sentences about similar topics cluster together. Sentences about unrelated topics fly apart.
+
+<div id="embed-app" style="background: var(--color-paper); border: 1px solid var(--color-line); border-radius: 8px; padding: 1.5rem; margin: 1.5rem 0;">
+
+<div id="embed-status" style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #64748b; margin-bottom: 1rem;">
+  Loading embedding model... (~30MB, only on first visit, cached afterwards)
+</div>
+
+<div id="embed-plot" style="width: 100%; height: 500px; background: #fafbfc; border-radius: 6px;"></div>
+
+<div style="margin-top: 1rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+  <input id="embed-input" type="text" placeholder="Type a sentence and press Embed..." style="flex: 1; min-width: 240px; padding: 0.6rem 0.85rem; border: 1px solid #cbd5e1; border-radius: 4px; font-family: inherit; font-size: 0.95rem;" />
+  <button id="embed-button" disabled style="padding: 0.6rem 1.2rem; background: #2563eb; color: white; border: none; border-radius: 4px; font-weight: 500; cursor: pointer; font-size: 0.95rem;">Embed</button>
+  <button id="embed-reset" style="padding: 0.6rem 1rem; background: transparent; color: #64748b; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; font-size: 0.95rem;">Reset</button>
+</div>
+
+<div style="margin-top: 0.75rem; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: #94a3b8;">
+  drag to rotate · scroll to zoom · 384-dim vectors projected to 3D via PCA
+</div>
+
+</div>
+
+<script type="module" src="/scripts/embedding-app.js"></script>
+
+## How this actually works
+
+There are three pieces moving behind the scenes:
+
+**1. The embedding model.** `all-MiniLM-L6-v2` is a small transformer (~22M parameters) that maps any English sentence to a 384-dimensional vector. When the page first loads, your browser downloads the ONNX-quantized version (~30MB) via [Transformers.js](https://huggingface.co/docs/transformers.js), Hugging Face's WebAssembly port. After that it lives in your browser cache and runs entirely on your CPU.
+
+**2. PCA projection.** A 384-dim vector cannot be drawn. Principal Component Analysis finds the 3 directions that capture the most variance across all your sentences and projects everything onto those axes. The shape of the cluster you see is real; the absolute axes are arbitrary and shift slightly every time you add a new sentence.
+
+**3. Cosine similarity for color.** Each point is colored by its cosine similarity to the first sentence. Bright blue means similar to "The dog chased the ball." Faded gray means unrelated. This is exactly what a vector database does when it picks the top-k chunks for RAG retrieval.
+
+## What to try
+
+A few suggestions that make the clustering really obvious:
+
+- Type three sentences about the same topic ("I love coffee", "espresso is my morning ritual", "fresh beans make the best brew") and watch them form a tight cluster
+- Then type something orthogonal ("quantum entanglement violates locality") and watch it fly to the opposite corner
+- Try paraphrasing: "the cat sat on the mat" vs "a feline rested on the rug" — they will be neighbors despite zero word overlap. That is the whole magic of semantic search.
+
+## Why this matters for RAG
+
+When a user asks "How do I fix HTTPS on my server?" your RAG pipeline:
+
+1. Embeds the question into 384 dimensions (the same way you just saw)
+2. Finds the chunks in your vector database closest to that point
+3. Pastes those chunks into the LLM prompt as context
+
+The retrieval step is just k-nearest-neighbors in this same kind of space. If your documents and your questions live in different regions of the embedding space, retrieval fails. If they cluster together, retrieval works. The plot above is a microcosm of what every production RAG system is doing — just with 10,000+ chunks instead of 5 sentences, and a real vector database instead of an in-browser array.
+
+## The code
+
+The full visualization is open source. The interesting bits:
+
+```javascript
+// 1. Load the embedder once
+import { pipeline } from '@xenova/transformers';
+const embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+
+// 2. Embed a sentence — returns a 384-dim vector
+const output = await embedder(sentence, { pooling: 'mean', normalize: true });
+const vector = Array.from(output.data);  // length 384
+
+// 3. PCA across all vectors to get 3D coordinates
+const projected = pca(allVectors, 3);
+
+// 4. Plot with Plotly
+Plotly.newPlot('embed-plot', [{
+  x: projected.map(v => v[0]),
+  y: projected.map(v => v[1]),
+  z: projected.map(v => v[2]),
+  text: sentences,
+  mode: 'markers+text',
+  type: 'scatter3d'
+}]);
+```
+
+That is the entire architecture. Five lines of conceptual work, wrapped in some UI plumbing.
+
+## Caveats and honesty
+
+A few things worth knowing about what you are seeing:
+
+- **PCA loses information.** Going from 384D to 3D drops most of the variance. Two points that look close in the plot might be further apart in the full space. The plot is a useful intuition pump, not ground truth.
+- **`all-MiniLM-L6-v2` is small.** Production RAG often uses `bge-large-en-v1.5` (1024-dim) or OpenAI's `text-embedding-3-small` (1536-dim). Bigger embedders capture finer distinctions but are too heavy for in-browser inference.
+- **English only.** This model was trained primarily on English. Multilingual embeddings exist but are larger.
+
+For a serious RAG project, swap the model and project from 1024D or 1536D. The principles are identical.
+
+Next post: I am going to plug this same embedder into the actual RAG pipeline from the previous post and run it end-to-end on my homelab.
