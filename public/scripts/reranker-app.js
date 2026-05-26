@@ -1,6 +1,5 @@
-// Interactive reranker visualization
-// Loads embedder + cross-encoder via Transformers.js, runs two-stage retrieval,
-// renders side-by-side comparison of vector-search vs reranked results.
+// Interactive reranker visualization (server-backed)
+// Calls /api/embed and /api/rerank which use Cloudflare Workers AI.
 
 const CORPUS = [
   "Espresso is a concentrated coffee made by forcing hot water through finely-ground beans under pressure.",
@@ -17,8 +16,6 @@ const CORPUS = [
   "Cardio training improves cardiovascular endurance; strength training increases muscle mass and bone density.",
 ];
 
-let embedder = null;
-let reranker = null;
 let docEmbeddings = null;
 
 const statusEl = document.getElementById('rerank-status');
@@ -36,41 +33,43 @@ function cosineSim(a, b) {
   return dot / (Math.sqrt(mA) * Math.sqrt(mB) + 1e-10);
 }
 
+async function embedTexts(texts) {
+  const res = await fetch('/api/embed', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ texts }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'unknown error' }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  return data.vectors;
+}
+
+async function rerank(query, documents) {
+  const res = await fetch('/api/rerank', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query, documents }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'unknown error' }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  return data.scores;
+}
+
 async function init() {
   try {
-    statusEl.textContent = 'Downloading embedder (~30MB)...';
-    const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
-    env.allowLocalModels = false;
-
-    embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-      progress_callback: (p) => {
-        if (p.status === 'progress' && p.file && p.progress) {
-          statusEl.textContent = `Embedder · ${p.file}: ${Math.round(p.progress)}%`;
-        }
-      },
-    });
-
-    statusEl.textContent = 'Downloading cross-encoder reranker (~30MB)...';
-    reranker = await pipeline('text-classification', 'Xenova/ms-marco-MiniLM-L-6-v2', {
-      progress_callback: (p) => {
-        if (p.status === 'progress' && p.file && p.progress) {
-          statusEl.textContent = `Reranker · ${p.file}: ${Math.round(p.progress)}%`;
-        }
-      },
-    });
-
-    statusEl.textContent = `Indexing ${CORPUS.length} documents...`;
-    docEmbeddings = [];
-    for (const doc of CORPUS) {
-      const out = await embedder(doc, { pooling: 'mean', normalize: true });
-      docEmbeddings.push(new Float32Array(out.data));
-    }
-
+    statusEl.textContent = `Indexing ${CORPUS.length} documents (one-time embedding of the corpus)...`;
+    docEmbeddings = await embedTexts(CORPUS);
     statusEl.textContent = `Ready. ${CORPUS.length} documents indexed. Try a query.`;
     buttonEl.disabled = false;
   } catch (err) {
     console.error(err);
-    statusEl.textContent = 'Error loading models. See console.';
+    statusEl.textContent = 'Setup failed: ' + err.message;
   }
 }
 
@@ -78,52 +77,43 @@ async function runQuery(query) {
   buttonEl.disabled = true;
   statusEl.textContent = 'Embedding query and ranking by cosine similarity...';
 
-  // Stage 1: embed query, cosine vs all docs
-  const qOut = await embedder(query, { pooling: 'mean', normalize: true });
-  const qVec = new Float32Array(qOut.data);
+  try {
+    const [qVec] = await embedTexts([query]);
 
-  const scored = CORPUS.map((doc, i) => ({
-    doc,
-    origIndex: i,
-    cosScore: cosineSim(qVec, docEmbeddings[i]),
-  }));
-  scored.sort((a, b) => b.cosScore - a.cosScore);
-  const topK = scored.slice(0, 5);
+    const scored = CORPUS.map((doc, i) => ({
+      doc,
+      origIndex: i,
+      cosScore: cosineSim(qVec, docEmbeddings[i]),
+    }));
+    scored.sort((a, b) => b.cosScore - a.cosScore);
+    const topK = scored.slice(0, 5);
 
-  // Show stage-1 results immediately while reranker runs
-  renderResults(topK, null);
+    // Show stage-1 results immediately while reranker runs
+    renderResults(topK, null);
 
-  statusEl.textContent = 'Reranking with cross-encoder...';
+    statusEl.textContent = 'Reranking with cross-encoder...';
+    const topDocs = topK.map(c => c.doc);
+    const rerankScores = await rerank(query, topDocs);
 
-  // Stage 2: cross-encoder rerank
-  const rerankScores = [];
-  for (const c of topK) {
-    const out = await reranker({ text: query, text_pair: c.doc }, { topk: 1 });
-    // out shape: [{ label: 'LABEL_0', score: ... }] — the relevance logit
-    rerankScores.push(out[0].score);
+    const rerankedList = topK.map((c, i) => ({ ...c, rerankScore: rerankScores[i] }));
+    rerankedList.sort((a, b) => b.rerankScore - a.rerankScore);
+
+    renderResults(topK, rerankedList);
+    statusEl.textContent = `Done. ${CORPUS.length} docs scanned, top 5 reranked.`;
+  } catch (err) {
+    statusEl.textContent = 'Query failed: ' + err.message;
+    console.error(err);
   }
-
-  // Combine and re-sort
-  const rerankedList = topK.map((c, i) => ({
-    ...c,
-    rerankScore: rerankScores[i],
-  }));
-  rerankedList.sort((a, b) => b.rerankScore - a.rerankScore);
-
-  renderResults(topK, rerankedList);
-  statusEl.textContent = `Done. ${CORPUS.length} docs scanned, top 5 reranked.`;
   buttonEl.disabled = false;
 }
 
 function renderResults(stage1, stage2) {
-  // Build a map: docId -> stage2 rank, for showing the arrow
   const stage1Order = new Map(stage1.map((c, i) => [c.origIndex, i]));
-  const stage2Order = stage2 ? new Map(stage2.map((c, i) => [c.origIndex, i])) : null;
 
   function renderColumn(title, items, isReranked) {
     const rows = items.map((c, idx) => {
       let movementBadge = '';
-      if (isReranked && stage2Order) {
+      if (isReranked) {
         const from = stage1Order.get(c.origIndex);
         const to = idx;
         const delta = from - to;
@@ -135,9 +125,7 @@ function renderResults(stage1, stage2) {
           movementBadge = `<span style="color:#94a3b8;margin-right:0.4rem;">—</span>`;
         }
       }
-      const score = isReranked
-        ? c.rerankScore.toFixed(2)
-        : c.cosScore.toFixed(3);
+      const score = isReranked ? c.rerankScore.toFixed(3) : c.cosScore.toFixed(3);
       return `
         <div style="padding: 0.7rem 0.85rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 4px; margin-bottom: 0.5rem; font-size: 0.88rem; line-height: 1.4;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.3rem;">
@@ -171,7 +159,7 @@ function renderResults(stage1, stage2) {
 
 buttonEl.addEventListener('click', () => {
   const q = inputEl.value.trim();
-  if (!q || !embedder || !reranker) return;
+  if (!q) return;
   runQuery(q);
 });
 

@@ -1,6 +1,6 @@
-// Interactive 3D embedding visualization
-// Loads Transformers.js + Plotly from CDN, runs the embedding model in-browser,
-// projects 384D vectors to 3D with PCA, and renders an interactive plot.
+// Interactive 3D embedding visualization (server-backed)
+// Calls /api/embed which uses Cloudflare Workers AI.
+// No model download, no WASM, no CDN imports of large libraries.
 
 const STARTER_SENTENCES = [
   "The dog chased the ball",
@@ -10,9 +10,8 @@ const STARTER_SENTENCES = [
   "Einstein developed relativity theory",
 ];
 
-let embedder = null;
 let sentences = [...STARTER_SENTENCES];
-let vectors = []; // array of Float32Array, each length 384
+let vectors = []; // array of arrays (each length 768)
 
 const statusEl = document.getElementById('embed-status');
 const plotEl = document.getElementById('embed-plot');
@@ -20,25 +19,24 @@ const inputEl = document.getElementById('embed-input');
 const buttonEl = document.getElementById('embed-button');
 const resetEl = document.getElementById('embed-reset');
 
-// --- Dynamically load Plotly from CDN ---
-function loadScript(src) {
+// --- Load Plotly once from CDN ---
+function loadPlotly() {
   return new Promise((resolve, reject) => {
+    if (window.Plotly) return resolve();
     const s = document.createElement('script');
-    s.src = src;
+    s.src = 'https://cdn.plot.ly/plotly-2.35.2.min.js';
     s.onload = resolve;
-    s.onerror = reject;
+    s.onerror = () => reject(new Error('Failed to load Plotly'));
     document.head.appendChild(s);
   });
 }
 
-// --- PCA implementation (simple, no deps) ---
-// Input: array of vectors (each same length). Output: array of [x,y,z] per input.
+// --- Simple PCA (power iteration, fast on ~10-30 vectors) ---
 function pca(data, k = 3) {
   if (data.length === 0) return [];
   const n = data.length;
   const d = data[0].length;
 
-  // 1. Center the data
   const mean = new Float32Array(d);
   for (const v of data) for (let i = 0; i < d; i++) mean[i] += v[i];
   for (let i = 0; i < d; i++) mean[i] /= n;
@@ -48,20 +46,15 @@ function pca(data, k = 3) {
     return c;
   });
 
-  // 2. Power iteration to find top-k principal components
-  // For a small number of vectors this is fast enough.
-  const components = [];
   const matCopy = centered.map(v => new Float32Array(v));
+  const components = [];
 
   for (let comp = 0; comp < k; comp++) {
-    // Random init
     let w = new Float32Array(d);
     for (let i = 0; i < d; i++) w[i] = Math.random() - 0.5;
     normalize(w);
 
-    // Power iterate
     for (let iter = 0; iter < 50; iter++) {
-      // w_new = X^T X w
       const xw = new Float32Array(n);
       for (let i = 0; i < n; i++) {
         let s = 0;
@@ -73,15 +66,12 @@ function pca(data, k = 3) {
         for (let j = 0; j < d; j++) wNew[j] += matCopy[i][j] * xw[i];
       }
       normalize(wNew);
-      // Check convergence
       let diff = 0;
       for (let i = 0; i < d; i++) diff += Math.abs(wNew[i] - w[i]);
       w = wNew;
       if (diff < 1e-6) break;
     }
     components.push(w);
-
-    // Deflate: subtract this component's contribution
     for (let i = 0; i < n; i++) {
       let proj = 0;
       for (let j = 0; j < d; j++) proj += matCopy[i][j] * w[j];
@@ -89,7 +79,6 @@ function pca(data, k = 3) {
     }
   }
 
-  // 3. Project original centered data onto the k components
   return centered.map(v => {
     const out = new Array(k);
     for (let c = 0; c < k; c++) {
@@ -118,11 +107,8 @@ function cosineSim(a, b) {
   return dot / (Math.sqrt(mA) * Math.sqrt(mB) + 1e-10);
 }
 
-// --- Color interpolation: gray → blue based on similarity to first sentence ---
 function similarityColor(sim) {
-  // sim ranges roughly -0.2 to 1.0. Clamp to [0, 1] visual range.
   const t = Math.max(0, Math.min(1, sim));
-  // Interpolate from light gray (148,163,184) to bright blue (37,99,235)
   const r = Math.round(148 + t * (37 - 148));
   const g = Math.round(163 + t * (99 - 163));
   const b = Math.round(184 + t * (235 - 184));
@@ -143,11 +129,7 @@ function render() {
     text: sentences.map(s => s.length > 40 ? s.slice(0, 40) + '...' : s),
     mode: 'markers+text',
     type: 'scatter3d',
-    marker: {
-      size: sizes,
-      color: colors,
-      line: { color: '#0c2461', width: 1 },
-    },
+    marker: { size: sizes, color: colors, line: { color: '#0c2461', width: 1 } },
     textposition: 'top center',
     textfont: { family: 'Inter Tight, sans-serif', size: 11, color: '#0a1628' },
     hovertemplate: '<b>%{text}</b><extra></extra>',
@@ -168,58 +150,51 @@ function render() {
   window.Plotly.newPlot(plotEl, [trace], layout, { responsive: true, displayModeBar: false });
 }
 
-async function embed(sentence) {
-  const out = await embedder(sentence, { pooling: 'mean', normalize: true });
-  return new Float32Array(out.data);
+async function embedTexts(texts) {
+  const res = await fetch('/api/embed', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ texts }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'unknown error' }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  return data.vectors;
 }
 
 async function init() {
   try {
-    // Load Plotly
-    await loadScript('https://cdn.plot.ly/plotly-2.35.2.min.js');
+    statusEl.textContent = 'Loading visualization library...';
+    await loadPlotly();
 
-    // Load Transformers.js
-    statusEl.textContent = 'Downloading embedding model (~30MB on first visit)...';
-    const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
-    env.allowLocalModels = false;
-    embedder = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
-      progress_callback: (p) => {
-        if (p.status === 'progress' && p.file && p.progress) {
-          statusEl.textContent = `Downloading ${p.file}: ${Math.round(p.progress)}%`;
-        }
-      },
-    });
-
-    // Embed starter sentences
-    statusEl.textContent = 'Embedding starter sentences...';
-    vectors = [];
-    for (const s of sentences) {
-      vectors.push(await embed(s));
-    }
+    statusEl.textContent = `Embedding ${sentences.length} starter sentences...`;
+    vectors = await embedTexts(sentences);
 
     statusEl.textContent = `Ready. ${sentences.length} sentences embedded. Type your own below.`;
     buttonEl.disabled = false;
     render();
   } catch (err) {
     console.error(err);
-    statusEl.textContent = 'Error loading model. Check console for details.';
+    statusEl.textContent = 'Setup failed: ' + err.message;
   }
 }
 
 buttonEl.addEventListener('click', async () => {
   const text = inputEl.value.trim();
-  if (!text || !embedder) return;
+  if (!text) return;
   buttonEl.disabled = true;
   statusEl.textContent = `Embedding "${text.slice(0, 40)}"...`;
   try {
-    const v = await embed(text);
+    const [vec] = await embedTexts([text]);
     sentences.push(text);
-    vectors.push(v);
+    vectors.push(vec);
     inputEl.value = '';
     statusEl.textContent = `Ready. ${sentences.length} sentences embedded.`;
     render();
   } catch (err) {
-    statusEl.textContent = 'Embed failed. See console.';
+    statusEl.textContent = 'Embed failed: ' + err.message;
     console.error(err);
   }
   buttonEl.disabled = false;
@@ -229,16 +204,18 @@ inputEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') buttonEl.click();
 });
 
-resetEl.addEventListener('click', () => {
+resetEl.addEventListener('click', async () => {
+  buttonEl.disabled = true;
   sentences = [...STARTER_SENTENCES];
-  vectors = vectors.slice(0, STARTER_SENTENCES.length);
-  if (vectors.length < STARTER_SENTENCES.length) {
-    // shouldn't happen, but re-init if so
-    init();
-    return;
+  statusEl.textContent = 'Resetting...';
+  try {
+    vectors = await embedTexts(sentences);
+    render();
+    statusEl.textContent = `Reset. ${sentences.length} sentences.`;
+  } catch (err) {
+    statusEl.textContent = 'Reset failed: ' + err.message;
   }
-  statusEl.textContent = `Reset. ${sentences.length} sentences.`;
-  render();
+  buttonEl.disabled = false;
 });
 
 init();
