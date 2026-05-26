@@ -35,7 +35,9 @@ async function init() {
   try {
     statusEl.textContent = 'Loading GPT-4o tokenizer bundle (~1.5MB)...';
     // UMD bundle exposes window.GPTTokenizer_o200k_base
-    await loadScript('https://cdn.jsdelivr.net/npm/gpt-tokenizer@2.5.2/dist/o200k_base.js');
+    // Use unpkg (canonical URL from gpt-tokenizer docs), latest version,
+    // pinned to 2.8.1 which is known to publish all /dist files.
+    await loadScript('https://unpkg.com/gpt-tokenizer@2.8.1/dist/o200k_base.js');
     const lib = window.GPTTokenizer_o200k_base;
     if (!lib || typeof lib.encode !== 'function') {
       throw new Error('library loaded but exports missing');
