@@ -1,0 +1,192 @@
+---
+title: 'Visual explanation of Rerankers in RAG'
+description: 'Vector search gets you the rough top-k. Rerankers fix the order. An interactive demo running a real cross-encoder in your browser.'
+pubDate: 2026-05-26
+author: 'Raymond Kipngetich'
+category: ai
+tags: ['rag', 'rerankers', 'cross-encoder', 'visualization', 'interactive']
+---
+
+In the [embedding visualization post](/blog/embedding-visual/) you watched sentences cluster by meaning. That clustering is how a vector database picks its top-k candidates for RAG. Fast and good enough — but it is not the most accurate retrieval you can do.
+
+Rerankers are the second stage. They look at every `(query, document)` pair *together* and give each one a fresh relevance score. They are slower than embedding search, so you only run them on the top 20-50 candidates. The combination — fast vector retrieval, then careful reranking — is the standard production RAG pattern in 2026.
+
+This post lets you watch a reranker in action. Type a query and the same `all-MiniLM-L6-v2` embedder from the last post picks the top 5 candidates from a small corpus. Then a cross-encoder (`ms-marco-MiniLM-L-6-v2`) reranks those 5 and you can see exactly which rows moved.
+
+<div id="rerank-app" style="background: var(--color-paper); border: 1px solid var(--color-line); border-radius: 8px; padding: 1.5rem; margin: 1.5rem 0;">
+
+<div id="rerank-status" style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #64748b; margin-bottom: 1rem;">
+  Loading embedder and cross-encoder... (~60MB total, only on first visit)
+</div>
+
+<div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;">
+  <input id="rerank-input" type="text" placeholder="Type a query, e.g. 'how do I make pasta'" style="flex: 1; min-width: 240px; padding: 0.6rem 0.85rem; border: 1px solid #cbd5e1; border-radius: 4px; font-family: inherit; font-size: 0.95rem;" />
+  <button id="rerank-button" disabled style="padding: 0.6rem 1.2rem; background: #2563eb; color: white; border: none; border-radius: 4px; font-weight: 500; cursor: pointer; font-size: 0.95rem;">Search & Rerank</button>
+</div>
+
+<div id="rerank-results" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; min-height: 200px;">
+  <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #94a3b8; padding: 1rem; text-align: center;">
+    Run a query to see vector-search vs reranker output side-by-side.
+  </div>
+</div>
+
+<div style="margin-top: 0.75rem; font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: #94a3b8;">
+  left: top 5 by cosine similarity (fast) · right: same 5 reranked by cross-encoder (accurate)
+</div>
+
+</div>
+
+<script type="module" src="/scripts/reranker-app.js"></script>
+
+## Why a second pass even helps
+
+The intuition that trips most people up: if embeddings already capture meaning, why do we need a second model?
+
+The answer is that bi-encoders (embedding models) and cross-encoders see the world very differently:
+
+<figure>
+<svg viewBox="0 0 760 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bi-encoder vs cross-encoder architecture">
+  <defs>
+    <marker id="rerankArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+  <rect x="20" y="20" width="360" height="320" rx="8" fill="#fafbfc" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="200" y="50" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="14" font-weight="600" fill="#0a1628">Bi-encoder (embedding)</text>
+  <text x="200" y="68" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">used for vector search</text>
+  <rect x="60" y="90" width="120" height="50" rx="6" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="120" y="120" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" fill="#0a1628">query</text>
+  <rect x="220" y="90" width="120" height="50" rx="6" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="280" y="120" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" fill="#0a1628">document</text>
+  <line x1="120" y1="140" x2="120" y2="170" stroke="#64748b" stroke-width="1.5" marker-end="url(#rerankArrow)"/>
+  <line x1="280" y1="140" x2="280" y2="170" stroke="#64748b" stroke-width="1.5" marker-end="url(#rerankArrow)"/>
+  <rect x="60" y="170" width="120" height="40" rx="6" fill="#eff4ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="120" y="195" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#0c2461">encoder</text>
+  <rect x="220" y="170" width="120" height="40" rx="6" fill="#eff4ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="280" y="195" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#0c2461">encoder</text>
+  <text x="60" y="240" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">[0.12, -0.4, ...]</text>
+  <text x="220" y="240" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">[0.10, -0.3, ...]</text>
+  <line x1="120" y1="250" x2="200" y2="280" stroke="#64748b" stroke-width="1.5"/>
+  <line x1="280" y1="250" x2="200" y2="280" stroke="#64748b" stroke-width="1.5"/>
+  <rect x="120" y="280" width="160" height="40" rx="6" fill="#fff" stroke="#0a1628" stroke-width="1.5"/>
+  <text x="200" y="305" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#0a1628">cosine similarity</text>
+  <rect x="400" y="20" width="340" height="320" rx="8" fill="#eff4ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="570" y="50" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="14" font-weight="600" fill="#0c2461">Cross-encoder (reranker)</text>
+  <text x="570" y="68" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#1e40af">used to refine the top-k</text>
+  <rect x="430" y="100" width="280" height="50" rx="6" fill="#fff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="570" y="124" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" fill="#0c2461">query + [SEP] + document</text>
+  <text x="570" y="142" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">concatenated into ONE input</text>
+  <line x1="570" y1="150" x2="570" y2="180" stroke="#2563eb" stroke-width="1.5" marker-end="url(#rerankArrow)"/>
+  <rect x="430" y="180" width="280" height="50" rx="6" fill="#fff" stroke="#0c2461" stroke-width="2"/>
+  <text x="570" y="205" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#0c2461">cross-attention transformer</text>
+  <text x="570" y="222" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#64748b">tokens of query attend to tokens of doc</text>
+  <line x1="570" y1="230" x2="570" y2="260" stroke="#2563eb" stroke-width="1.5" marker-end="url(#rerankArrow)"/>
+  <rect x="450" y="260" width="240" height="60" rx="6" fill="#0c2461" stroke="#0c2461"/>
+  <text x="570" y="285" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="13" font-weight="600" fill="#fff">single relevance score</text>
+  <text x="570" y="304" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#a5b4fc">e.g. 8.42 or -2.1</text>
+</svg>
+</figure>
+
+A bi-encoder embeds the query and each document **separately**, then compares vectors with cosine similarity. That separation is the whole point — you embed your documents once, store the vectors, and at query time you only embed the query and do a fast nearest-neighbor lookup. It scales to billions of documents.
+
+A cross-encoder does no such thing. It concatenates the query and a candidate document into one input and runs them through a transformer together. Every token of the query attends to every token of the document. The model can pick up on fine-grained interactions that get lost when you collapse a sentence into a single vector. The output is a single relevance score, not an embedding.
+
+The cost: you cannot precompute anything. Every query has to do a full forward pass per candidate document. That is why rerankers only run on the top-k from a faster first stage — typically 20-100 candidates, not 100,000.
+
+## The two-stage pattern in practice
+
+This is what every production RAG pipeline above the toy level looks like:
+
+<figure>
+<svg viewBox="0 0 760 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two-stage retrieval pipeline">
+  <defs>
+    <marker id="rerankArrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+  <rect x="20" y="60" width="120" height="80" rx="6" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="80" y="90" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="13" font-weight="600" fill="#0a1628">Query</text>
+  <text x="80" y="115" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">from the user</text>
+  <line x1="140" y1="100" x2="180" y2="100" stroke="#2563eb" stroke-width="1.5" marker-end="url(#rerankArrow2)"/>
+  <rect x="180" y="60" width="180" height="80" rx="6" fill="#eff4ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="270" y="85" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="13" font-weight="600" fill="#0c2461">Stage 1: Vector search</text>
+  <text x="270" y="105" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">bi-encoder + ANN</text>
+  <text x="270" y="122" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">millions of docs &rarr; top 50</text>
+  <line x1="360" y1="100" x2="400" y2="100" stroke="#2563eb" stroke-width="1.5" marker-end="url(#rerankArrow2)"/>
+  <rect x="400" y="60" width="180" height="80" rx="6" fill="#fff" stroke="#0c2461" stroke-width="2"/>
+  <text x="490" y="85" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="13" font-weight="600" fill="#0a1628">Stage 2: Reranker</text>
+  <text x="490" y="105" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">cross-encoder</text>
+  <text x="490" y="122" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#64748b">50 docs &rarr; top 5</text>
+  <line x1="580" y1="100" x2="620" y2="100" stroke="#2563eb" stroke-width="1.5" marker-end="url(#rerankArrow2)"/>
+  <rect x="620" y="60" width="120" height="80" rx="6" fill="#0c2461" stroke="#0c2461"/>
+  <text x="680" y="90" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="13" font-weight="600" fill="#fff">LLM context</text>
+  <text x="680" y="115" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#a5b4fc">5 best chunks</text>
+  <text x="80" y="200" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">cheap</text>
+  <text x="270" y="200" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">~10ms per query</text>
+  <text x="490" y="200" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">~100ms per query</text>
+  <text x="680" y="200" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#64748b">expensive</text>
+  <line x1="20" y1="220" x2="740" y2="220" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="380" y="232" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#94a3b8" font-style="italic">funnel: cast a wide net cheaply, then filter precisely</text>
+</svg>
+</figure>
+
+The numbers are illustrative — real systems vary. The point is the *funnel*: each stage is more expensive and more accurate than the last, so you only pass it the survivors from the previous stage. By the time the LLM sees anything, you have spent compute proportional to result quality, not corpus size.
+
+## How to read the demo above
+
+When you ran a query, the left column shows what vanilla vector search returned, sorted by cosine similarity. The right column shows the same 5 documents reranked, sorted by the cross-encoder score (which can be any real number, not just 0-1 like cosine).
+
+What to notice:
+
+- **Score scales are different.** Cosine ranges roughly -1 to 1. The cross-encoder outputs raw logits, often -10 to +10. Absolute scores between the two columns are not comparable — only the *order* within each column matters.
+- **Reranker is more decisive.** Vector-search scores within the top 5 are often clustered tight (0.45, 0.43, 0.41...). The reranker spreads them out far more, making the "best" result obvious.
+- **Sometimes the order is identical.** When the corpus is small and queries are clear, vector search already gets it right and reranking just confirms. The reranker earns its keep on ambiguous queries or near-duplicates.
+
+Try queries that mix multiple concepts — "how to debug performance issues in production" — to see the reranker really matter. The bi-encoder might surface anything containing "debug" or "production"; the cross-encoder picks the one that actually addresses both.
+
+## When NOT to use a reranker
+
+Like every component in RAG, rerankers have a cost-benefit. Skip them when:
+
+- **Latency is critical.** A reranker adds 50-300ms per query depending on hardware. For real-time chat over a small corpus, it may not be worth it.
+- **Your corpus is tiny.** Under ~1000 documents, the top-5 from cosine is usually as good as it gets. Reranking is most valuable when you have many near-misses to disambiguate.
+- **You cannot evaluate quality.** Without a test set of (query, ideal-answer) pairs, you cannot know whether the reranker actually helped. It is possible to make things worse with a poorly chosen model.
+
+## Production options
+
+If you want to use a reranker in a real system, the popular choices in 2026 are:
+
+- **Cohere Rerank v3** — API-based, very strong, multi-lingual, ~$1 per 1k searches
+- **`bge-reranker-large`** — open source, top-tier quality, requires GPU for production latency
+- **`cross-encoder/ms-marco-*` family** — small, fast, decent quality — what this demo uses
+- **Voyage rerank-2** — newer entrant, competitive on benchmarks
+
+The decision is mostly about latency budget and whether you can host a GPU. For most teams shipping a RAG product, Cohere's API is the lowest-friction option. For privacy-sensitive deployments, self-hosting `bge-reranker-large` is the standard play.
+
+## The code
+
+The two-stage pipeline is conceptually compact:
+
+```javascript
+// Stage 1: cheap vector search
+const queryEmbed = await embedder(query, { pooling: 'mean', normalize: true });
+const candidates = documents
+  .map((doc, i) => ({ doc, score: cosineSim(queryEmbed, docEmbeddings[i]) }))
+  .sort((a, b) => b.score - a.score)
+  .slice(0, 5);
+
+// Stage 2: expensive but accurate rerank
+const rerankPromises = candidates.map(c =>
+  reranker({ text: query, text_pair: c.doc })
+);
+const reranked = await Promise.all(rerankPromises);
+const finalRanked = candidates
+  .map((c, i) => ({ doc: c.doc, score: reranked[i][0].score }))
+  .sort((a, b) => b.score - a.score);
+```
+
+That's the entire pattern. Two model calls per query, glued together with array sorts.
+
+## What I would build next
+
+Next post in this thread: I'll wire all three stages — embedding, vector store, reranker — into a single working RAG endpoint running on my homelab, and we'll watch how a real query flows through every stage with actual latency numbers.
