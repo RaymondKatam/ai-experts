@@ -1,0 +1,141 @@
+---
+title: 'Your GPU has 200,000 tin droplets in it'
+description: 'Every AI accelerator passes through a man-made star inside a Dutch machine. Doing the math from droplet to die explains why GPU supply is the bottleneck nobody can engineer around.'
+pubDate: 2026-05-26
+author: 'Raymond Kipngetich'
+category: ai
+tags: ['lithography', 'euv', 'asml', 'gpu', 'supply-chain', 'hardware']
+---
+
+The Nvidia H100 sitting in some hyperscaler's data center right now is the product of approximately 200,000 controlled microscopic explosions. Each explosion takes about ten nanoseconds. Each one happens inside a vacuum chamber the size of a small bedroom, where droplets of molten tin are fired into a beam path at the rate of fifty thousand per second and vaporized by a 30,000-watt laser into a plasma forty times hotter than the surface of the sun.
+
+This is not a metaphor. This is what is happening, right now, in five buildings on Earth, to produce the chips that train every frontier AI model. The math is worth walking through, because once you have the number — 200,000 droplets per GPU — the entire shape of the AI supply chain comes into focus.
+
+## The number, derived
+
+Start with what is publicly known and uncontroversial. An ASML EUV scanner — the only machine in the world capable of patterning sub-7nm features at production volume — fires fifty thousand tin droplets per second into its plasma chamber. Each droplet is about 25 micrometers across, roughly a third the width of a human hair, traveling at 70 meters per second.
+
+<figure>
+<svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="EUV plasma source diagram">
+  <defs>
+    <radialGradient id="plasmaCore" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="30%" stop-color="#fde68a" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#f59e0b" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#dc2626" stop-opacity="0"/>
+    </radialGradient>
+    <marker id="litArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+  <rect x="20" y="40" width="720" height="240" rx="8" fill="#0a1628" stroke="#0c2461" stroke-width="1"/>
+  <text x="380" y="30" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="13" font-weight="600" fill="#0a1628">Inside the EUV plasma chamber</text>
+  <text x="60" y="80" font-family="JetBrains Mono, monospace" font-size="10" fill="#94a3b8">tin droplet generator</text>
+  <rect x="60" y="90" width="80" height="40" rx="4" fill="#1e293b" stroke="#475569" stroke-width="1"/>
+  <text x="100" y="115" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10" fill="#cbd5e1">25 \u00b5m</text>
+  <circle cx="170" cy="160" r="2.5" fill="#cbd5e1"/>
+  <circle cx="200" cy="160" r="2.5" fill="#cbd5e1"/>
+  <circle cx="230" cy="160" r="2.5" fill="#cbd5e1"/>
+  <circle cx="260" cy="160" r="2.5" fill="#cbd5e1"/>
+  <circle cx="290" cy="160" r="2.5" fill="#cbd5e1"/>
+  <circle cx="320" cy="160" r="2.5" fill="#cbd5e1"/>
+  <text x="240" y="190" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#64748b">50,000 droplets / sec  \u00b7  70 m/s</text>
+  <text x="700" y="80" text-anchor="end" font-family="JetBrains Mono, monospace" font-size="10" fill="#94a3b8">30 kW CO\u2082 laser</text>
+  <rect x="660" y="90" width="80" height="40" rx="4" fill="#1e293b" stroke="#dc2626" stroke-width="1.5"/>
+  <line x1="660" y1="160" x2="395" y2="160" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="2 4" opacity="0.7"/>
+  <line x1="660" y1="160" x2="395" y2="160" stroke="#f59e0b" stroke-width="0.5" opacity="0.9"/>
+  <circle cx="370" cy="160" r="35" fill="url(#plasmaCore)"/>
+  <text x="370" y="220" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="11" font-weight="600" fill="#fde68a">tin plasma at 220,000\u00b0C</text>
+  <text x="370" y="236" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#94a3b8">emits 13.5 nm EUV light</text>
+  <path d="M 370 125 Q 350 100 320 95" stroke="#a5b4fc" stroke-width="1" fill="none" opacity="0.6"/>
+  <path d="M 370 125 Q 390 100 420 95" stroke="#a5b4fc" stroke-width="1" fill="none" opacity="0.6"/>
+  <text x="120" y="260" font-family="JetBrains Mono, monospace" font-size="9" fill="#94a3b8" font-style="italic">two pulses per droplet: pre-pulse flattens, main pulse ignites</text>
+</svg>
+<figcaption>Inside the LPP (laser-produced plasma) source. Tin droplets fall through a vacuum chamber and are hit twice — first to flatten them into a pancake, then to vaporize them into a plasma that emits 13.5 nm EUV light. Each event takes about ten nanoseconds.</figcaption>
+</figure>
+
+Now look at what it takes to produce a GPU. The H100 die is 814 square millimeters. A 300mm silicon wafer fits about 80 such dies, of which 65 to 70 are usable after manufacturing defects. The H100 is built on TSMC's 4N process, which uses extreme ultraviolet lithography for roughly 5 of the patterning layers.
+
+Real-world EUV throughput in production is around 60 wafers per hour, which works out to one wafer per minute. The plasma source runs continuously while the machine is active — it does not stop between wafers. So in the time it takes to pattern one EUV layer on one wafer:
+
+```
+50,000 droplets/sec \u00d7 60 sec = 3,000,000 droplets per wafer per layer
+```
+
+Across five EUV layers, the wafer passes through fifteen million droplet events before patterning is complete. Divide by sixty-five good dies:
+
+```
+15,000,000 \u00f7 65 \u2248 230,000 tin droplets per H100 die
+```
+
+Different chips use different numbers of EUV layers. AMD's MI300X uses fewer; Apple's M-series uses around four; the upcoming TSMC 2nm process will use significantly more, possibly 12 to 18. But the order of magnitude holds across all of them. **Every AI accelerator currently in service traces back to a few hundred thousand controlled tin-plasma explosions inside a Dutch-built machine.**
+
+That number is the actual unit cost of leading-edge AI compute, expressed in physics.
+
+## Why this number explains the supply chain
+
+Once you internalize that an H100 is two hundred thousand tin droplets in trench coat, several things about the GPU shortage stop being mysterious.
+
+<figure>
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The bottleneck pyramid">
+  <defs>
+    <marker id="litArrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+  <polygon points="380,30 100,250 660,250" fill="#eff4ff" stroke="#2563eb" stroke-width="1.5"/>
+  <line x1="180" y1="190" x2="580" y2="190" stroke="#cbd5e1" stroke-width="0.8" stroke-dasharray="3 3"/>
+  <line x1="240" y1="130" x2="520" y2="130" stroke="#cbd5e1" stroke-width="0.8" stroke-dasharray="3 3"/>
+  <line x1="300" y1="80" x2="460" y2="80" stroke="#cbd5e1" stroke-width="0.8" stroke-dasharray="3 3"/>
+  <text x="380" y="55" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" font-weight="700" fill="#0c2461">1 company</text>
+  <text x="380" y="70" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#64748b">ASML (Netherlands)</text>
+  <text x="380" y="105" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" font-weight="600" fill="#0c2461">2 sub-suppliers</text>
+  <text x="380" y="120" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#64748b">Zeiss optics \u00b7 Trumpf laser</text>
+  <text x="380" y="158" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" font-weight="600" fill="#0c2461">~60 EUV systems / year</text>
+  <text x="380" y="173" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#64748b">at ~$200M-400M each, multi-year backlog</text>
+  <text x="380" y="215" text-anchor="middle" font-family="Inter Tight, sans-serif" font-size="12" font-weight="600" fill="#0c2461">4 customers buy ~95%</text>
+  <text x="380" y="230" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#64748b">TSMC \u00b7 Samsung \u00b7 Intel \u00b7 SK hynix</text>
+  <text x="380" y="265" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="9" fill="#94a3b8" font-style="italic">Every modern AI chip on Earth passes through this pyramid.</text>
+</svg>
+<figcaption>The world's leading-edge logic supply chain, stack-ranked by how many entities exist at each level. The base — your H100 — is one of millions. Climb up and the count collapses fast.</figcaption>
+</figure>
+
+**The constraint is not silicon.** Silicon is abundant. The constraint is not power, capital, or the will to build fabs. Several governments have committed hundreds of billions of dollars. The constraint is that there is exactly one company on Earth that can produce the machine that produces the chip, and that company can build only about sixty of those machines per year. ASML's targets for 2026 sit at "over 60 EUV systems" — about 15% more than 2025, with 2027 projected at around 80. After two decades of investment, this is the maximum slope.
+
+**Each EUV system is a five-year backlog.** Once a fab orders one, delivery is years out. Each costs between $200 million for a Low-NA NXE:3800E and roughly $400 million for the new High-NA EXE:5200. Installation alone takes months. By the time it's running production, the architecture of the chips it will pattern was decided years before.
+
+**There are no second sources.** Canon has shown nanoimprint lithography prototypes. China is investing tens of billions of dollars in domestic lithography research. Neither is within five years of ASML's current production-grade EUV, let alone the High-NA frontier. The lead is structural, accumulated over forty years of incremental physics and tooling investment.
+
+## The sub-bottlenecks nobody draws
+
+The 60-machines-per-year number is the *upper* limit. Several less-discussed inputs constrain ASML's own output:
+
+**Zeiss mirrors.** EUV light at 13.5 nm wavelength cannot be focused by lenses — it gets absorbed by glass. The only known method is reflection off precision-engineered multilayer mirrors made of alternating thin films of molybdenum and silicon. Each pair of layers is a few atoms thick. The full mirror stack uses 40+ pairs and achieves about 70% reflectivity. These mirrors are made by exactly one organization on Earth: Carl Zeiss SMT, in Oberkochen, Germany. A fire at that facility would stop the global leading edge.
+
+**Trumpf CO₂ lasers.** The 30-kilowatt laser that vaporizes the tin droplets is the most powerful pulsed industrial laser in commercial use. It comes from Trumpf in Ditzingen, Germany. There is one supplier.
+
+**Tin droplet generators.** Producing 50,000 perfectly-sized, perfectly-timed, perfectly-spherical tin droplets per second for the lifetime of a fab is itself a small monopoly. The internal mechanism is patented and protected.
+
+**Actinic mask inspection tools.** This is the one almost nobody talks about. Every chip needs a photomask — the reticle that contains the pattern to be projected onto the wafer. At 13.5 nm wavelength, masks must be inspected at the same wavelength they will be used at, because defects invisible to normal light become catastrophic at EUV scale. There are fewer than a dozen actinic inspection tools in the world. Their throughput is the silent ceiling on mask production for the entire leading edge.
+
+Stack these together and the AI chip supply chain narrows from one company to a handful of sub-suppliers, each themselves single points of failure. Treating this as "ASML capacity" understates how concentrated the actual physical bottleneck is.
+
+## What this means for AI compute
+
+The downstream consequence is what you already see in the headlines: GPU availability is a year-out commit; hyperscalers are signing power deals before they know exactly what chips will fill the buildings; sovereign AI plans are pre-buying TSMC capacity through 2028.
+
+But the deeper consequence is one that does not get said often enough: **the rate at which humanity can scale AI compute is bounded by the rate at which ASML can ship EUV systems and Zeiss can ship mirrors.** Software innovation is fast. Algorithmic efficiency gains continue. Architectures get better. But the throughput of frontier-node silicon is set in Veldhoven, Oberkochen, and Ditzingen, by the combined output of fewer than a thousand engineers working in a single time zone.
+
+Sixty machines a year. Each machine running roughly two million wafer-layers a year. Each wafer-layer producing the leading edge of what is possible in AI. Take any forecast you have read about how many GPUs will exist in 2027 or 2030 — they all reduce to a guess about that number going up.
+
+## A thought experiment to keep
+
+Next time you read a press release about a hyperscaler securing a gigawatt of new power for a campus, picture this: every rack in that campus, eventually filled with AI accelerators, traces back to a stream of tin droplets falling through a vacuum chamber. The droplet generator does not know about the data center. The plasma does not know about transformer attention layers. The mirror in Oberkochen is polished to sub-atomic precision so a photon can bounce off it cleanly enough that, eight years later, someone can ask a model to write a poem.
+
+The chain runs from one tin droplet, hit twice by a German laser, through a Dutch vacuum chamber, off a German mirror, onto a Taiwanese wafer, into a die that fills an American server, into an inference call from a phone in Nairobi, into an answer that lands on a screen.
+
+Two hundred thousand droplets. One GPU. The whole AI economy.
+
+## What I would write next
+
+A follow-up post on the *energy* side of this same chain: each EUV machine draws around 1.5 megawatts, and the ratio of "light energy that ends up exposing the wafer" to "electrical energy that goes into the wall" is famously brutal. Walking through that conversion loss tells you why fabs have to be built next to power plants now, and why Nvidia's GPU power numbers are themselves a kind of ASML-shaped problem.
