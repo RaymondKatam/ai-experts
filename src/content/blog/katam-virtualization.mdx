@@ -1,0 +1,149 @@
+---
+title: 'I got tired of fighting my hypervisor, so I built one: introducing Katam Virtualization'
+description: 'After years of running Proxmox in my home lab, I wanted a platform I understood down to the last packet. Katam Virtualization is the result: a free, open-source KVM platform with Ceph storage, micro-segmentation, HA and an API-first control plane. Here is why I built it, how it works, and where to download the ISO.'
+pubDate: 2026-10-08
+author: 'Raymond Kipngetich'
+category: homelab
+tags: ['virtualization', 'kvm', 'ceph', 'ovn', 'homelab', 'open-source']
+---
+
+Every home lab has a moment when the tools stop feeling like tools and start feeling like weather: something that happens *to* you. Mine came on an ordinary evening, staring at the same "No valid subscription" dialog I had dismissed a few hundred times, while trying to remember which repository file I had edited after the last upgrade, and why my cluster had decided it no longer had quorum.
+
+None of this is a scandal. Proxmox VE is an excellent piece of software. It is free, it is stable, and it has carried countless labs and production estates, including mine for a long time. If it works for you, keep using it.
+
+But I had stopped *enjoying* my infrastructure. And for someone who spends his working days talking about infrastructure, that felt like a warning light worth paying attention to.
+
+## What tired actually meant
+
+It was never one big problem. It was friction that kept adding up:
+
+- **Living around the edges.** The subscription prompt, swapping the enterprise repository for the community one, small post-install rituals that every guide tells you to do and nobody explains.
+- **A platform shaped like a server, when I wanted one shaped like a cloud.** I wanted projects, quotas, roles and API tokens as the *default* way of working. I wanted Terraform and Ansible to be first-class, not an afterthought.
+- **Security that is opt-in.** I wanted every VM to start life in a default-deny network posture, with east-west rules expressed as intent ("web may reach db on 5432"), not as a firewall I had to remember to switch on.
+- **Leaving should be easy.** If I built a VM on my platform, I wanted to be able to hand it to someone running VMware or Hyper-V tomorrow, as an OVA or a VHDX, without a weekend of conversions.
+- **Curiosity.** I wanted to understand every layer, from the KVM ioctl to the OVN flow table to the Ceph placement group. The best way to understand a system is to build one.
+
+So I stopped tweaking and started building.
+
+## Meet Katam Virtualization
+
+Katam is a virtualization platform for any x86-64 server. It doesn't reinvent the hard parts: the hypervisor, the storage and the network fabric are mature open-source projects that already run some of the largest clouds in the world. What Katam adds is the part I always wanted to own: **the control plane**.
+
+<figure style="margin: 2rem 0;">
+<svg viewBox="0 0 760 400" role="img" aria-labelledby="katam-arch-title" style="width: 100%; height: auto; display: block; font-family: 'Inter Tight', sans-serif;">
+  <title id="katam-arch-title">Katam architecture: clients talk to the Katam control plane, which drives KVM, Ceph and OVN on every node</title>
+  <g font-size="13" fill="var(--color-ink, #0f172a)">
+    <rect x="20" y="20" width="720" height="56" rx="8" fill="var(--color-blue-tint, #eff6ff)" stroke="var(--color-line, #cbd5e1)"/>
+    <text x="380" y="44" text-anchor="middle" font-weight="600">Web UI  ·  REST API  ·  katamctl CLI  ·  Terraform  ·  Ansible</text>
+    <text x="380" y="63" text-anchor="middle" font-size="11.5" fill="var(--color-ink-mute, #64748b)">sign in with local accounts, Active Directory or SAML single sign-on</text>
+
+    <line x1="380" y1="76" x2="380" y2="104" stroke="var(--color-blue-bright, #2563eb)" stroke-width="2"/>
+    <polygon points="374,98 386,98 380,108" fill="var(--color-blue-bright, #2563eb)"/>
+
+    <rect x="20" y="110" width="720" height="118" rx="8" fill="var(--color-paper, #fff)" stroke="var(--color-blue-bright, #2563eb)" stroke-width="1.5"/>
+    <text x="40" y="134" font-weight="700" fill="var(--color-blue-deep, #0c2461)">Katam control plane</text>
+    <g font-size="12">
+      <rect x="40"  y="146" width="160" height="30" rx="5" fill="var(--color-blue-tint, #eff6ff)" stroke="var(--color-line, #cbd5e1)"/><text x="120" y="166" text-anchor="middle">Scheduler + placement</text>
+      <rect x="215" y="146" width="160" height="30" rx="5" fill="var(--color-blue-tint, #eff6ff)" stroke="var(--color-line, #cbd5e1)"/><text x="295" y="166" text-anchor="middle">Projects, roles, quotas</text>
+      <rect x="390" y="146" width="160" height="30" rx="5" fill="var(--color-blue-tint, #eff6ff)" stroke="var(--color-line, #cbd5e1)"/><text x="470" y="166" text-anchor="middle">HA, fencing, witness</text>
+      <rect x="565" y="146" width="155" height="30" rx="5" fill="var(--color-blue-tint, #eff6ff)" stroke="var(--color-line, #cbd5e1)"/><text x="642" y="166" text-anchor="middle">DR plans + runbooks</text>
+      <rect x="40"  y="184" width="160" height="30" rx="5" fill="var(--color-blue-tint, #eff6ff)" stroke="var(--color-line, #cbd5e1)"/><text x="120" y="204" text-anchor="middle">Images, OVA, templates</text>
+      <rect x="215" y="184" width="160" height="30" rx="5" fill="var(--color-blue-tint, #eff6ff)" stroke="var(--color-line, #cbd5e1)"/><text x="295" y="204" text-anchor="middle">Snapshots + vault</text>
+      <rect x="390" y="184" width="160" height="30" rx="5" fill="var(--color-blue-tint, #eff6ff)" stroke="var(--color-line, #cbd5e1)"/><text x="470" y="204" text-anchor="middle">Security groups</text>
+      <rect x="565" y="184" width="155" height="30" rx="5" fill="var(--color-blue-tint, #eff6ff)" stroke="var(--color-line, #cbd5e1)"/><text x="642" y="204" text-anchor="middle">FinOps + reports</text>
+    </g>
+
+    <g stroke="var(--color-ink-mute, #64748b)" stroke-width="1.5" stroke-dasharray="4 4">
+      <line x1="140" y1="228" x2="140" y2="270"/><line x1="380" y1="228" x2="380" y2="270"/><line x1="620" y1="228" x2="620" y2="270"/>
+    </g>
+    <g font-size="11" fill="var(--color-ink-mute, #64748b)">
+      <text x="148" y="254">libvirt</text><text x="388" y="254">OVN northbound</text><text x="628" y="254">Redfish (BMC)</text>
+    </g>
+
+    <g>
+      <rect x="20"  y="272" width="228" height="108" rx="8" fill="var(--color-paper, #fff)" stroke="var(--color-line, #cbd5e1)"/>
+      <rect x="266" y="272" width="228" height="108" rx="8" fill="var(--color-paper, #fff)" stroke="var(--color-line, #cbd5e1)"/>
+      <rect x="512" y="272" width="228" height="108" rx="8" fill="var(--color-paper, #fff)" stroke="var(--color-line, #cbd5e1)"/>
+    </g>
+    <g font-size="12">
+      <text x="134" y="296" text-anchor="middle" font-weight="600">Node 1</text>
+      <text x="380" y="296" text-anchor="middle" font-weight="600">Node 2</text>
+      <text x="626" y="296" text-anchor="middle" font-weight="600">Node N</text>
+      <text x="134" y="320" text-anchor="middle">KVM / QEMU</text><text x="380" y="320" text-anchor="middle">KVM / QEMU</text><text x="626" y="320" text-anchor="middle">KVM / QEMU</text>
+      <text x="134" y="340" text-anchor="middle">OVS + ovn-controller</text><text x="380" y="340" text-anchor="middle">OVS + ovn-controller</text><text x="626" y="340" text-anchor="middle">OVS + ovn-controller</text>
+      <text x="134" y="360" text-anchor="middle">Ceph OSDs</text><text x="380" y="360" text-anchor="middle">Ceph OSDs</text><text x="626" y="360" text-anchor="middle">Ceph OSDs</text>
+    </g>
+  </g>
+</svg>
+<figcaption style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--color-ink-mute); text-align: center; margin-top: 0.5rem;">One control plane, any number of ordinary x86 servers. The hard parts are battle-tested open source; the opinions are Katam's.</figcaption>
+</figure>
+
+### What it does today
+
+| Area | What you get |
+|---|---|
+| **Compute** | Linux, Windows (UEFI, Secure Boot, TPM 2.0) and BSD guests, GPU passthrough, live migration |
+| **Storage** | Ceph RBD with three replicas and copy-on-write clones, or local disks for a single box |
+| **Networking** | VLAN bridges or OVN overlay networks with distributed routing, NAT and default-deny security groups |
+| **Access** | Projects, quotas, four roles (admin, operator, viewer, auditor), API tokens, Active Directory and SAML SSO |
+| **Images** | Import qcow2, raw, VMDK, VHD/VHDX and VMware OVAs; templates; export back out as OVA, VHDX or qcow2 |
+| **Resilience** | Node health checks with a witness for a second opinion, BMC fencing over Redfish, automatic HA restart |
+| **Disaster recovery** | DR plans with test, planned and disaster modes, on Ceph stretch clusters or RBD mirroring |
+| **Data protection** | Scheduled, quiesced snapshots with retention locks, plus immutable copies to S3 Object Lock |
+| **Operations** | Declarative stack files, YAML runbooks with dry run and rollback, cost showback, rightsizing and reports |
+
+## Three design decisions I'm proud of
+
+**1. Fencing before failover, with a witness in the room.** The most dangerous moment in any HA system is deciding a node is dead when it is merely unreachable. Restart its VMs elsewhere too early and two copies of the same disk are suddenly being written at once. Katam asks a small witness for a second opinion, powers the suspect node off through its BMC, *confirms* it is off, and only then restarts its workloads. Boring, deliberate and safe.
+
+**2. Snapshots you can't delete, even as admin.** Ransomware crews have learned to go after backups first. Katam snapshots can carry a retention lock that nobody can shorten or remove, and the platform refuses to delete a VM while a lock still protects it. For a copy that lives outside the cluster entirely, Katam writes to S3 buckets with Object Lock in compliance mode, where even the bucket owner can't delete data before its time.
+
+**3. An honest exit door.** Katam never holds your VMs hostage. A stopped VM exports as a VMware OVA with a proper OVF descriptor and stream-optimised VMDK, as a Hyper-V VHDX, or as plain qcow2 for Proxmox and OpenStack. Coming in, VMware OVAs pass through virt-v2v so the right drivers are injected. Platforms should earn your loyalty, not trap it.
+
+## Why it installs like an appliance
+
+Katam ships as a single bootable ISO, about 600 MB, that installs **with no internet access at all**. The kernel, server firmware, KVM, libvirt, Ceph, OVN, the controller's Python stack and the Katam packages are all on the disc.
+
+You boot it from USB or your server's virtual media, choose a role (node, controller, all-in-one or witness), pick a disk and a network, and set an admin password. A few minutes later you have a working host. For racks of identical servers there is an unattended mode driven by boot parameters, so you can install ten nodes as easily as one.
+
+Under the hood it's Ubuntu 24.04 LTS. That's a deliberate choice: Katam's value is the control plane, and I would rather stand on five years of security updates from a mature distribution than maintain a kernel of my own.
+
+## Download Katam
+
+<div style="border: 1px solid var(--color-line); border-left: 4px solid var(--color-blue-bright); border-radius: 8px; padding: 1.25rem 1.5rem; margin: 1.5rem 0; background: var(--color-paper);">
+  <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-blue-bright); font-weight: 600;">Free and open source · Apache-2.0</div>
+  <div style="font-family: 'IBM Plex Serif', serif; font-size: 1.35rem; font-weight: 600; color: var(--color-blue-deep); margin: 0.35rem 0 0.25rem;">Katam Virtualization 0.4.0</div>
+  <div style="color: var(--color-ink-soft); font-size: 0.95rem; margin-bottom: 1rem;">Installer ISO for x86-64 servers · BIOS and UEFI · about 600 MB · installs offline</div>
+  <div style="display: flex; flex-wrap: wrap; gap: 0.75rem;">
+    <a href="https://github.com/RaymondKatam/katam/releases/download/v0.4.0/katam-virtualization-0.4.0-amd64.iso" style="background: var(--color-blue-bright); color: #fff; text-decoration: none; font-weight: 600; padding: 0.65rem 1.1rem; border-radius: 6px;">Download the ISO</a>
+    <a href="https://github.com/RaymondKatam/katam/releases/latest" style="border: 1px solid var(--color-line); color: var(--color-blue-deep); text-decoration: none; font-weight: 500; padding: 0.65rem 1.1rem; border-radius: 6px;">Release notes and checksum</a>
+    <a href="https://github.com/RaymondKatam/katam" style="border: 1px solid var(--color-line); color: var(--color-blue-deep); text-decoration: none; font-weight: 500; padding: 0.65rem 1.1rem; border-radius: 6px;">Source code</a>
+  </div>
+</div>
+
+### Get running in five steps
+
+1. **Prepare the firmware.** Enable VT-x and VT-d (Intel) or SVM and IOMMU (AMD), and turn Secure Boot off on the host.
+2. **Write the ISO** to a USB stick with balenaEtcher or `dd`, or mount it through your server's BMC virtual media.
+3. **Boot and answer the installer:** role, OS disk, management network, admin account.
+4. **Join the nodes** to the controller with `katam-node-setup` and the controller's SSH key.
+5. **Sign in** at `http://<controller-ip>:8080`. The first admin password is waiting in `/root/katam-initial-admin.txt`.
+
+One box is enough to try it in all-in-one mode. Three or more servers unlock Ceph, HA and live migration. Check your download against the `.sha256` file on the release page, and see the [install guide](https://github.com/RaymondKatam/katam/blob/main/docs/INSTALL.md) for the full walkthrough.
+
+## An honest status report
+
+Katam is version 0.4: young software built in evenings and weekends. The installer, web UI, API, access control, image import and export, HA restart, snapshots and metering have been exercised end to end. Ceph at scale, OVN micro-segmentation, BMC fencing, DR mirroring and directory sign-in follow the documented upstream tooling but have had limited testing across different hardware.
+
+So: run it in a lab, break it, and tell me what broke. Don't put your payroll database on it yet.
+
+## What's next
+
+- A Katam CSI driver, so Kubernetes persistent volumes become hot-plugged Katam volumes
+- Rolling upgrades from the UI for every role, not just nodes
+- Flow-log visualisation for the micro-segmentation layer
+- Wider hardware testing, with your help
+
+Building Katam reminded me why I fell in love with infrastructure in the first place. Every layer I used to treat as a black box now has a name, a log line and a reason. If you've ever felt tired of your own lab, I hope Katam gives you that feeling back, or at least gives you a good weekend of tinkering.
+
+Issues, ideas and pull requests are welcome on [GitHub](https://github.com/RaymondKatam/katam).
